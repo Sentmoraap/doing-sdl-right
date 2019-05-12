@@ -2,6 +2,9 @@
 #include <cstdint>
 #include <GL/glew.h>
 #include <SDL2/SDL.h>
+#include "imgui/imgui.h"
+#include "imgui/imgui_impl_sdl.h"
+#include "imgui/imgui_impl_opengl3.h"
 
 int64_t getTimeMicroseconds()
 {
@@ -33,11 +36,16 @@ int main(int argc, char **argv)
     glewInit();
 
     // Init ImGui
-    //...
+    ImGui::CreateContext();
+    //ImGuiIO& io = ImGui::GetIO();
+    ImGui_ImplSDL2_InitForOpenGL(window, windowContext);
+    ImGui_ImplOpenGL3_Init("#version 150");
+    ImGui::StyleColorsDark();
 
     int64_t uSeconds = getTimeMicroseconds();
     int64_t prevUseconds = uSeconds;
     int64_t toUpdate = 0;
+
     while(true)
     {
         SDL_Event event;
@@ -51,16 +59,26 @@ int main(int argc, char **argv)
                 return 0;
         }
 
+        // ImGui
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplSDL2_NewFrame(window);
+        ImGui::NewFrame();
+        ImGui::Begin("Stuff");
+        ImGui::Text("Settings and scene selection here");
+        ImGui::End();
+
         // Update
         uSeconds = getTimeMicroseconds();
         toUpdate += (uSeconds - prevUseconds) * frameRate;
         // Update loop here
 
         // Draw
+        ImGui::Render();
         SDL_GL_MakeCurrent(window, windowContext);
         glViewport(0, 0, NATIVE_RES_X, NATIVE_RES_Y);
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         SDL_GL_SwapWindow(window);
     }
 }

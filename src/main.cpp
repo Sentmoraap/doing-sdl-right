@@ -1,10 +1,14 @@
+#include <unistd.h>
 #include <chrono>
+#include <vector>
+#include <array>
 #include <cstdint>
 #include <GL/glew.h>
 #include <SDL2/SDL.h>
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_sdl.h"
 #include "imgui/imgui_impl_opengl3.h"
+#include "scenes/Scene.hpp"
 
 int64_t getTimeMicroseconds()
 {
@@ -14,9 +18,13 @@ int64_t getTimeMicroseconds()
 
 int main(int argc, char **argv)
 {
-    static constexpr uint16_t NATIVE_RES_X=1024;
-    static constexpr uint16_t NATIVE_RES_Y=768;
-    uint16_t frameRate = 120;
+    static constexpr uint16_t NATIVE_RES_X = 1024;
+    static constexpr uint16_t NATIVE_RES_Y = 768;
+    static constexpr uint8_t  UPDATE_TIMING_WINDOW = 1;
+    static constexpr uint8_t  MAX_UPDATE_FRAMES = 10;
+    int updateRate = 120;
+    int simulatedUpdateTime = 0; // * 100µs
+    int simulatedDrawTime = 0; // * 100µs
 
     // Init SDL
     SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER);
@@ -42,12 +50,35 @@ int main(int argc, char **argv)
     ImGui_ImplOpenGL3_Init("#version 150");
     ImGui::StyleColorsDark();
 
+    // Scenes
+    Scene dummy0, dummy1, dummy2;
+    std::array<Scene*, 3> scenes {{&dummy0, &dummy1, &dummy2}};
+    Scene *currentScene = scenes[2];
+
+    // Chrono
     int64_t uSeconds = getTimeMicroseconds();
     int64_t prevUseconds = uSeconds;
     int64_t toUpdate = 0;
+    std::array<int64_t, 16> frameTimes;
+    std::array<int64_t, frameTimes.size()> iterationTimes;
+    uint8_t currentFrame = 0;
 
+    // Main loop
     while(true)
     {
+        // Measure frame rate
+        uint16_t frameRate;
+        int64_t startTime = getTimeMicroseconds();
+        {
+            int64_t prevTime = frameTimes[currentFrame];
+            frameTimes[currentFrame] = startTime;
+            ++currentFrame %= frameTimes.size();
+            frameRate = frameTimes.size() * 1000000 / (startTime - prevTime);
+        }
+        uint32_t iterationTime = 0;
+        for(int64_t frameIterationTime : iterationTimes) iterationTime += frameIterationTime;
+        iterationTime /= iterationTimes.size();
+
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
@@ -64,21 +95,56 @@ int main(int argc, char **argv)
         ImGui_ImplSDL2_NewFrame(window);
         ImGui::NewFrame();
         ImGui::Begin("Stuff");
-        ImGui::Text("Settings and scene selection here");
+        ImGui::Text("%6d FPS", frameRate);
+        ImGui::Text("%6d µs", iterationTime);
+        ImGui::Separator();
+        ImGui::Text("Scene");
+        if(ImGui::BeginCombo("", currentScene->getName(), 0))
+        {
+            for(Scene *scene : scenes)
+            {
+                if(ImGui::Selectable(scene->getName(), scene == currentScene))
+                {
+                    currentScene = scene;
+                }
+            }
+            ImGui::EndCombo();
+        }
+        currentScene->displayImGuiSettings();
+        ImGui::Separator();
+        ImGui::Text("Settings");
+        ImGui::DragInt("Update rate (Hz)", &updateRate, 1, 1, 300);
+        ImGui::DragInt("Update time *100 µs", &simulatedUpdateTime, 1, 0, 1000);
+        ImGui::DragInt("Draw time *100 µs", &simulatedDrawTime, 1, 0, 1000);
         ImGui::End();
 
         // Update
         uSeconds = getTimeMicroseconds();
         toUpdate += (uSeconds - prevUseconds) * frameRate;
-        // Update loop here
+        prevUseconds = uSeconds;
+
+        if(toUpdate > 1000000 * MAX_UPDATE_FRAMES) toUpdate = 1000000 * MAX_UPDATE_FRAMES;
+        uint8_t nbFramesUpdated = 0;
+        if(toUpdate > -1000000 * UPDATE_TIMING_WINDOW) do
+        {
+            currentScene->update(frameRate);
+            toUpdate -= 1000000;
+            nbFramesUpdated++;
+        }
+        while(toUpdate > 1000000 * UPDATE_TIMING_WINDOW);
+        while(getTimeMicroseconds() < uSeconds + nbFramesUpdated * simulatedUpdateTime * 100);
 
         // Draw
+        int64_t startDrawTime = getTimeMicroseconds();
         ImGui::Render();
         SDL_GL_MakeCurrent(window, windowContext);
         glViewport(0, 0, NATIVE_RES_X, NATIVE_RES_Y);
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
+        currentScene->draw();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         SDL_GL_SwapWindow(window);
+        while(getTimeMicroseconds() < startDrawTime + simulatedDrawTime * 100);
+        iterationTimes[currentFrame] = getTimeMicroseconds() - startTime;
     }
 }

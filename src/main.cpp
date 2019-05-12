@@ -8,7 +8,9 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_sdl.h"
 #include "imgui/imgui_impl_opengl3.h"
-#include "scenes/Scene.hpp"
+#include "Renderer.hpp"
+#include "Scenes/Scene.hpp"
+#include "Scenes/AccurateInputLag.hpp"
 
 int64_t getTimeMicroseconds()
 {
@@ -27,7 +29,7 @@ int main(int argc, char **argv)
     int simulatedDrawTime = 0; // * 100µs
 
     // Init SDL
-    SDL_Init(SDL_INIT_VIDEO|SDL_INIT_TIMER);
+    SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_JOYSTICK);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
@@ -39,6 +41,7 @@ int main(int argc, char **argv)
     SDL_Window* window = SDL_CreateWindow("SDL test", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
             NATIVE_RES_X, NATIVE_RES_Y, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     SDL_GLContext windowContext = SDL_GL_CreateContext(window);
+    Renderer::init();
     SDL_GL_SetSwapInterval(0); // V-sync OFF
 
     glewInit();
@@ -51,9 +54,10 @@ int main(int argc, char **argv)
     ImGui::StyleColorsDark();
 
     // Scenes
-    Scene dummy0, dummy1, dummy2;
-    std::array<Scene*, 3> scenes {{&dummy0, &dummy1, &dummy2}};
-    Scene *currentScene = scenes[2];
+    Scene dummy0;
+    AccurateInputLag accurateInputLag;
+    std::array<Scene*, 2> scenes {{&dummy0, &accurateInputLag}};
+    Scene *currentScene = scenes[1];
 
     // Chrono
     int64_t uSeconds = getTimeMicroseconds();
@@ -120,7 +124,7 @@ int main(int argc, char **argv)
 
         // Update
         uSeconds = getTimeMicroseconds();
-        toUpdate += (uSeconds - prevUseconds) * frameRate;
+        toUpdate += (uSeconds - prevUseconds) * updateRate;
         prevUseconds = uSeconds;
 
         if(toUpdate > 1000000 * MAX_UPDATE_FRAMES) toUpdate = 1000000 * MAX_UPDATE_FRAMES;
@@ -139,6 +143,7 @@ int main(int argc, char **argv)
         ImGui::Render();
         SDL_GL_MakeCurrent(window, windowContext);
         glViewport(0, 0, NATIVE_RES_X, NATIVE_RES_Y);
+        glScissor(0, 0, NATIVE_RES_X, NATIVE_RES_Y);
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
         currentScene->draw();

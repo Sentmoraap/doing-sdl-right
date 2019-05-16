@@ -1,9 +1,26 @@
 #pragma once
 #include <cstdint>
+#include <SDL2/SDL.h>
+#include <GL/glew.h>
+
+static constexpr uint16_t NATIVE_RES_X = 1024;
+static constexpr uint16_t NATIVE_RES_Y = 768;
 
 class Renderer
 {
+    private:
+        GLuint fbo;
+        SDL_GLContext context;
+        SDL_Window *window;
+
     public:
-        static void init();
-        static void rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
+        GLuint texture;
+
+        void init();
+        void beginDrawFrame();
+        void endDrawFrame();
+        void rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
+        static GLuint loadShaders(const char* vert, const char* frag);
 };
+
+extern Renderer renderer;

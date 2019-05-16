@@ -1,4 +1,4 @@
-#include <unistd.h>
+#include <iostream>
 #include <chrono>
 #include <vector>
 #include <array>
@@ -20,9 +20,7 @@ int64_t getTimeMicroseconds()
 
 int main(int argc, char **argv)
 {
-    static constexpr uint16_t NATIVE_RES_X = 1024;
-    static constexpr uint16_t NATIVE_RES_Y = 768;
-    static constexpr uint8_t  UPDATE_TIMING_WINDOW = 1;
+    static constexpr uint8_t  UPDATE_TIMING_WINDOW = 0;
     static constexpr uint8_t  MAX_UPDATE_FRAMES = 10;
     int updateRate = 120;
     int simulatedUpdateTime = 0; // * 100µs
@@ -38,13 +36,50 @@ int main(int argc, char **argv)
     SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+
+    // Init render context
+    renderer.init();
+    SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
+
+    // Init window and it's context
     SDL_Window* window = SDL_CreateWindow("SDL test", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
             NATIVE_RES_X, NATIVE_RES_Y, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     SDL_GLContext windowContext = SDL_GL_CreateContext(window);
-    Renderer::init();
-    SDL_GL_SetSwapInterval(0); // V-sync OFF
+    SDL_GL_SetSwapInterval(1); // V-sync ON
 
-    glewInit();
+    // Init window rendering
+    GLuint program = Renderer::loadShaders("assets/basic_texture.vert", "assets/basic_texture.frag");
+    glUseProgram(program);
+    glUniform1i(glGetUniformLocation(program, "tex"), 0);
+    GLuint vbo, vao;
+    glGenBuffers(1, &vbo);
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    {
+        GLuint attrib = glGetAttribLocation(program ,"pos");
+        glVertexAttribPointer(attrib, 2, GL_FLOAT, false, 16, (void*)0);
+        glEnableVertexAttribArray(attrib);
+        attrib = glGetAttribLocation(program ,"textureCoord");
+        glVertexAttribPointer(attrib, 2, GL_FLOAT, false, 16, (void*)8);
+        glEnableVertexAttribArray(attrib);
+        glBindFragDataLocation(program, 0, "fragPass");
+        float data[16] =
+        {
+            -1, -1, 0, 0,
+            -1,  1, 0, 1,
+             1,  1, 1, 1,
+             1, -1, 1, 0
+        };
+        glBufferData(GL_ARRAY_BUFFER, 16 * 4, data, GL_STATIC_DRAW);
+    }
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+    {
+        int32_t err=glGetError();
+        if(err)
+            std::cerr << "Error window render " << std::string((const char*)gluErrorString(err)) << std::endl;
+    }
 
     // Init ImGui
     ImGui::CreateContext();
@@ -140,13 +175,32 @@ int main(int argc, char **argv)
 
         // Draw
         int64_t startDrawTime = getTimeMicroseconds();
-        ImGui::Render();
+        renderer.beginDrawFrame();
+        currentScene->draw();
+        renderer.endDrawFrame();
+        int32_t err=glGetError();
+        if(err)
+            std::cerr << "Error frame render " << std::string((const char*)gluErrorString(err)) << std::endl;
+
         SDL_GL_MakeCurrent(window, windowContext);
+        ImGui::Render();
         glViewport(0, 0, NATIVE_RES_X, NATIVE_RES_Y);
         glScissor(0, 0, NATIVE_RES_X, NATIVE_RES_Y);
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
-        currentScene->draw();
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, renderer.texture);
+        glUseProgram(program);
+        glBindVertexArray(vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
+        glBindVertexArray(0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        err=glGetError();
+        if(err)
+            std::cerr << "Error window render " << std::string((const char*)gluErrorString(err)) << std::endl;
+
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         SDL_GL_SwapWindow(window);
         while(getTimeMicroseconds() < startDrawTime + simulatedDrawTime * 100);

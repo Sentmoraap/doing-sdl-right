@@ -3,6 +3,7 @@
 #include <vector>
 #include <array>
 #include <cstdint>
+#include <algorithm>
 #include <GL/glew.h>
 #include <SDL2/SDL.h>
 #include "imgui/imgui.h"
@@ -12,9 +13,19 @@
 #include "Scenes/Scene.hpp"
 #include "Scenes/AccurateInputLag.hpp"
 
+enum SyncMode
+{
+    noVSync,
+    noVSyncTripleBuffer,
+    adaptiveSync,
+    vSync,
+    vSyncWait,
+    num
+};
+
 int64_t getTimeMicroseconds()
 {
-    return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch())
+    return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch())
                 .count();
 }
 
@@ -22,9 +33,21 @@ int main(int argc, char **argv)
 {
     static constexpr uint8_t  UPDATE_TIMING_WINDOW = 0;
     static constexpr uint8_t  MAX_UPDATE_FRAMES = 10;
+    bool missedSync = false;
+    bool gpuSync = true;
     int updateRate = 120;
     int simulatedUpdateTime = 0; // * 100µs
     int simulatedDrawTime = 0; // * 100µs
+    SyncMode syncMode = SyncMode::noVSync;
+
+    char syncModeNames[SyncMode::num][32] =
+    {
+        "No v-sync",
+        "No v-sync + triple buffer",
+        "Adaptive sync",
+        "V-sync",
+        "V-sync + wait"
+    };
 
     // Init SDL
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_JOYSTICK);
@@ -45,7 +68,7 @@ int main(int argc, char **argv)
     SDL_Window* window = SDL_CreateWindow("SDL test", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
             NATIVE_RES_X, NATIVE_RES_Y, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     SDL_GLContext windowContext = SDL_GL_CreateContext(window);
-    SDL_GL_SetSwapInterval(1); // V-sync ON
+    SDL_GL_SetSwapInterval(0); // V-sync OFF
 
     // Init window rendering
     GLuint program = Renderer::loadShaders("assets/basic_texture.vert", "assets/basic_texture.frag");
@@ -98,8 +121,11 @@ int main(int argc, char **argv)
     int64_t uSeconds = getTimeMicroseconds();
     int64_t prevUseconds = uSeconds;
     int64_t toUpdate = 0;
+    uint8_t currentFrameUpdate = 0, currentFrameDraw = 0;
     std::array<int64_t, 16> frameTimes;
     std::array<int64_t, frameTimes.size()> iterationTimes;
+    std::array<int64_t, 6> singleFrameTimes;
+    std::array<int64_t, 6> drawTimes;
     uint8_t currentFrame = 0;
 
     // Main loop
@@ -155,7 +181,44 @@ int main(int argc, char **argv)
         ImGui::DragInt("Update rate (Hz)", &updateRate, 1, 1, 300);
         ImGui::DragInt("Update time *100 µs", &simulatedUpdateTime, 1, 0, 1000);
         ImGui::DragInt("Draw time *100 µs", &simulatedDrawTime, 1, 0, 1000);
+        SyncMode oldSyncMode = syncMode;
+        if(ImGui::BeginCombo("Sync mode", syncModeNames[syncMode], 0))
+        {
+            for(int8_t i = 0; i < SyncMode::num; i++)
+                if(ImGui::Selectable(syncModeNames[i], i == syncMode)) syncMode = static_cast<SyncMode>(i);
+            ImGui::EndCombo();
+        }
+        if(syncMode != oldSyncMode)
+        {
+            int8_t swapInterval = 0;
+            switch(syncMode)
+            {
+                case noVSync:
+                case noVSyncTripleBuffer:
+                    swapInterval = 0;
+                    break;
+                case adaptiveSync:
+                    swapInterval = -1;
+                    break;
+                case vSync:
+                case vSyncWait:
+                    swapInterval = 1;
+                    break;
+                default:
+                    break;
+            }
+            // Tiple buffer only settable in X server?
+
+            if(SDL_GL_SetSwapInterval(swapInterval) == -1)
+            {
+                syncMode = vSync;
+                SDL_GL_SetSwapInterval(1);
+            }
+        }
+        ImGui::Checkbox("GPU sync", &gpuSync);
         ImGui::End();
+
+        if(syncMode == SyncMode::vSyncWait) gpuSync = true;
 
         // Update
         uSeconds = getTimeMicroseconds();
@@ -163,15 +226,34 @@ int main(int argc, char **argv)
         prevUseconds = uSeconds;
 
         if(toUpdate > 1000000 * MAX_UPDATE_FRAMES) toUpdate = 1000000 * MAX_UPDATE_FRAMES;
-        uint8_t nbFramesUpdated = 0;
+        uint8_t nbFramesToUpdate;
+        if(toUpdate > -1000000 * UPDATE_TIMING_WINDOW)
+        {
+            if(toUpdate > 100000 * UPDATE_TIMING_WINDOW) nbFramesToUpdate = 1 + (toUpdate - 100000 * UPDATE_TIMING_WINDOW) / 1000000;
+            else nbFramesToUpdate = 1;
+        }
+        else nbFramesToUpdate = 0;
+        int64_t totalTime = nbFramesToUpdate + *std::max_element(singleFrameTimes.cbegin(), singleFrameTimes.cend())
+                + *std::max_element(drawTimes.cbegin(), drawTimes.cend());
+        SDL_DisplayMode displayMode;
+        SDL_GetWindowDisplayMode(window, &displayMode);
+        int64_t displayRefreshPeriod = 1000000 / displayMode.refresh_rate;
+        totalTime = displayRefreshPeriod - totalTime - 2000;
+        if(syncMode == SyncMode::vSyncWait && !missedSync) while(getTimeMicroseconds() < uSeconds + totalTime);
+
+        startTime = uSeconds = getTimeMicroseconds();
         if(toUpdate > -1000000 * UPDATE_TIMING_WINDOW) do
         {
+            int64_t frameTime = getTimeMicroseconds();
             currentScene->update(frameRate);
+            frameTime = getTimeMicroseconds() - frameTime;
+            if(frameTime < simulatedUpdateTime * 100) frameTime = simulatedUpdateTime * 100;
+            singleFrameTimes[currentFrameUpdate] = frameTime;
+            ++currentFrameUpdate %= singleFrameTimes.size();
             toUpdate -= 1000000;
-            nbFramesUpdated++;
         }
         while(toUpdate > 1000000 * UPDATE_TIMING_WINDOW);
-        while(getTimeMicroseconds() < uSeconds + nbFramesUpdated * simulatedUpdateTime * 100);
+        while(getTimeMicroseconds() < uSeconds + nbFramesToUpdate * simulatedUpdateTime * 100);
 
         // Draw
         int64_t startDrawTime = getTimeMicroseconds();
@@ -202,8 +284,15 @@ int main(int argc, char **argv)
             std::cerr << "Error window render " << std::string((const char*)gluErrorString(err)) << std::endl;
 
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        SDL_GL_SwapWindow(window);
+        int64_t drawTime = getTimeMicroseconds() - startDrawTime;
+        if(drawTime > simulatedDrawTime * 100) drawTime = simulatedDrawTime * 100;
+        drawTimes[currentFrameDraw] = drawTime;
+        ++currentFrameDraw %= drawTimes.size();
         while(getTimeMicroseconds() < startDrawTime + simulatedDrawTime * 100);
-        iterationTimes[currentFrame] = getTimeMicroseconds() - startTime;
+        SDL_GL_SwapWindow(window);
+        if(gpuSync) glFinish();
+        int64_t lastIterationTime = getTimeMicroseconds() - startTime;
+        missedSync = gpuSync && lastIterationTime >= displayRefreshPeriod * 1.5;
+        iterationTimes[currentFrame] = lastIterationTime;
     }
 }

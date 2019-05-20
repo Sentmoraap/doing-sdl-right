@@ -19,7 +19,7 @@ class Renderer
         void init();
         void beginDrawFrame();
         void endDrawFrame();
-        void rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
+        void rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
         static GLuint loadShaders(const char* vert, const char* frag);
 };
 

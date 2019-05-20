@@ -9,9 +9,11 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_sdl.h"
 #include "imgui/imgui_impl_opengl3.h"
+#include "Joysticks.hpp"
 #include "Renderer.hpp"
 #include "Scenes/Scene.hpp"
 #include "Scenes/AccurateInputLag.hpp"
+#include "Scenes/Scrolling.hpp"
 
 enum SyncMode
 {
@@ -64,6 +66,9 @@ int main(int argc, char **argv)
     renderer.init();
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
 
+    // Init joysticks
+    joysticks.init();
+
     // Init window and it's context
     SDL_Window* window = SDL_CreateWindow("SDL test", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
             NATIVE_RES_X, NATIVE_RES_Y, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
@@ -112,9 +117,9 @@ int main(int argc, char **argv)
     ImGui::StyleColorsDark();
 
     // Scenes
-    Scene dummy0;
+    Scrolling scrolling;
     AccurateInputLag accurateInputLag;
-    std::array<Scene*, 2> scenes {{&dummy0, &accurateInputLag}};
+    std::array<Scene*, 2> scenes {{&scrolling, &accurateInputLag}};
     Scene *currentScene = scenes[1];
 
     // Chrono
@@ -153,6 +158,7 @@ int main(int argc, char **argv)
             if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE
                 && event.window.windowID == SDL_GetWindowID(window))
                 return 0;
+            if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) return 0;
         }
 
         // ImGui
@@ -178,9 +184,9 @@ int main(int argc, char **argv)
         currentScene->displayImGuiSettings();
         ImGui::Separator();
         ImGui::Text("Settings");
-        ImGui::DragInt("Update rate (Hz)", &updateRate, 1, 1, 300);
-        ImGui::DragInt("Update time *100 µs", &simulatedUpdateTime, 1, 0, 1000);
-        ImGui::DragInt("Draw time *100 µs", &simulatedDrawTime, 1, 0, 1000);
+        ImGui::DragInt("Update rate (Hz)", &updateRate, 0.25, 1, 300);
+        ImGui::DragInt("Update time *100 µs", &simulatedUpdateTime, 0.25, 0, 1000);
+        ImGui::DragInt("Draw time *100 µs", &simulatedDrawTime, 0.25, 0, 1000);
         SyncMode oldSyncMode = syncMode;
         if(ImGui::BeginCombo("Sync mode", syncModeNames[syncMode], 0))
         {

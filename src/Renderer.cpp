@@ -39,7 +39,7 @@ void Renderer::endDrawFrame()
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void Renderer::rect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
+void Renderer::rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 {
     // Unoptimized but short way to draw rectangle.
     // It should be fast enough for this program.

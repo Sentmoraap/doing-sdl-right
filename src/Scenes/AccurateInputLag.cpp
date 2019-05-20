@@ -1,16 +1,11 @@
 #include <cstring>
 #include "Scenes/AccurateInputLag.hpp"
 #include "Renderer.hpp"
+#include "Joysticks.hpp"
 
 AccurateInputLag::AccurateInputLag()
 {
     strcpy(name, "Accurate input lag");
-    int nbJoysticks = SDL_NumJoysticks();
-    for(int iJs = 0; iJs < nbJoysticks; iJs++)
-    {
-        SDL_Joystick *js = SDL_JoystickOpen(iJs);
-        if(js) joysticks.push_back(js);
-    }
 }
 
 void AccurateInputLag::update(uint16_t frameRate)
@@ -19,13 +14,7 @@ void AccurateInputLag::update(uint16_t frameRate)
     int nbKeys;
     const Uint8* keys = SDL_GetKeyboardState(&nbKeys);
     for(int i = 0; i < nbKeys; i++) if(keys[i]) display = true;
-    for(SDL_Joystick *js : joysticks)
-    {
-        int n = SDL_JoystickNumHats(js);
-        for(int iHat = 0; iHat < n; iHat++) if(SDL_JoystickGetHat(js, iHat) != SDL_HAT_CENTERED) display = true;
-        n = SDL_JoystickNumButtons(js);
-        for(int iBtn = 0; iBtn < n; iBtn++) if(SDL_JoystickGetButton(js, iBtn)) display = true;
-    }
+    display |= joysticks.isAnyInputPressed();
 }
 
 void AccurateInputLag::draw()

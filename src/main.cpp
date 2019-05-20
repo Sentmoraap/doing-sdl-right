@@ -15,6 +15,10 @@
 #include "Scenes/AccurateInputLag.hpp"
 #include "Scenes/Scrolling.hpp"
 
+#ifdef main
+#undef main
+#endif
+
 enum SyncMode
 {
     noVSync,
@@ -106,7 +110,7 @@ int main(int argc, char **argv)
     {
         int32_t err=glGetError();
         if(err)
-            std::cerr << "Error window render " << std::string((const char*)gluErrorString(err)) << std::endl;
+            std::cerr << "Error window render " << gluErrorString(err) << std::endl;
     }
 
     // Init ImGui
@@ -143,10 +147,10 @@ int main(int argc, char **argv)
             int64_t prevTime = frameTimes[currentFrame];
             frameTimes[currentFrame] = startTime;
             ++currentFrame %= frameTimes.size();
-            frameRate = frameTimes.size() * 1000000 / (startTime - prevTime);
+            frameRate = static_cast<int16_t>(frameTimes.size() * 1000000 / (startTime - prevTime));
         }
         uint32_t iterationTime = 0;
-        for(int64_t frameIterationTime : iterationTimes) iterationTime += frameIterationTime;
+        for(int64_t frameIterationTime : iterationTimes) iterationTime += static_cast<uint32_t>(frameIterationTime);
         iterationTime /= iterationTimes.size();
 
         SDL_Event event;
@@ -235,7 +239,7 @@ int main(int argc, char **argv)
         uint8_t nbFramesToUpdate;
         if(toUpdate > -1000000 * UPDATE_TIMING_WINDOW)
         {
-            if(toUpdate > 100000 * UPDATE_TIMING_WINDOW) nbFramesToUpdate = 1 + (toUpdate - 100000 * UPDATE_TIMING_WINDOW) / 1000000;
+            if(toUpdate > 100000 * UPDATE_TIMING_WINDOW) nbFramesToUpdate = static_cast<uint8_t>(1 + (toUpdate - 100000 * UPDATE_TIMING_WINDOW) / 1000000);
             else nbFramesToUpdate = 1;
         }
         else nbFramesToUpdate = 0;
@@ -268,7 +272,7 @@ int main(int argc, char **argv)
         renderer.endDrawFrame();
         int32_t err=glGetError();
         if(err)
-            std::cerr << "Error frame render " << std::string((const char*)gluErrorString(err)) << std::endl;
+            std::cerr << "Error frame render " << gluErrorString(err) << std::endl;
 
         SDL_GL_MakeCurrent(window, windowContext);
         ImGui::Render();
@@ -287,7 +291,7 @@ int main(int argc, char **argv)
         glBindTexture(GL_TEXTURE_2D, 0);
         err=glGetError();
         if(err)
-            std::cerr << "Error window render " << std::string((const char*)gluErrorString(err)) << std::endl;
+            std::cerr << "Error window render " << gluErrorString(err) << std::endl;
 
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         int64_t drawTime = getTimeMicroseconds() - startDrawTime;

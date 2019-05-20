@@ -6,8 +6,9 @@ Renderer renderer;
 void Renderer::init()
 {
     window = SDL_CreateWindow("Render context window", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-            0, 0, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_SKIP_TASKBAR);
+        0, 0, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN | SDL_WINDOW_SKIP_TASKBAR);
     context = SDL_GL_CreateContext(window);
+    glewExperimental = GL_TRUE;
     glewInit();
     //SDL_DestroyWindow(window);
     glEnable(GL_SCISSOR_TEST);
@@ -22,7 +23,7 @@ void Renderer::init()
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     int32_t err=glGetError();
     if(err)
-        std::cerr << "Error init renderer" << std::string((const char*)gluErrorString(err)) << std::endl;
+        std::cerr << "Error init renderer" << gluErrorString(err) << std::endl;
 }
 
 void Renderer::beginDrawFrame()

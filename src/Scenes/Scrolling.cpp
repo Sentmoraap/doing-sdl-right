@@ -17,8 +17,8 @@ void Scrolling::update(uint16_t frameRate)
     const Uint8* keys = SDL_GetKeyboardState(nullptr);
     if(keys[SDL_SCANCODE_LEFT])  x -= 32767;
     if(keys[SDL_SCANCODE_RIGHT]) x += 32767;
-    if(keys[SDL_SCANCODE_UP])    y += 32767;
-    if(keys[SDL_SCANCODE_DOWN])  y -= 32767;
+    if(keys[SDL_SCANCODE_UP])    y -= 32767;
+    if(keys[SDL_SCANCODE_DOWN])  y += 32767;
     if(x < -32767) x = -32767; else if(x > 32767) x = 32767;
     if(y < -32767) y = -32767; else if(y > 32767) y = 32767;
     scrollX += x * scrollSpeed / 32767;
@@ -47,6 +47,6 @@ void Scrolling::draw()
         posY %= sizeY;
         if(posY < 0) posY += sizeY;
         posY -= SQUARES_SIZE;
-        renderer.rect(posX, posY, posX + SQUARES_SIZE, posY + SQUARES_SIZE);
+        renderer.rect(posX, posY, posX + SQUARES_SIZE - 1, posY + SQUARES_SIZE - 1);
     }
 }

@@ -13,6 +13,7 @@
 #include "Renderer.hpp"
 #include "Scenes/Scene.hpp"
 #include "Scenes/AccurateInputLag.hpp"
+#include "Scenes/PixelArt.hpp"
 #include "Scenes/Scrolling.hpp"
 
 #ifdef main
@@ -98,10 +99,10 @@ int main(int argc, char **argv)
         glBindFragDataLocation(program, 0, "fragPass");
         float data[16] =
         {
-            -1, -1, 0, 0,
-            -1,  1, 0, 1,
-             1,  1, 1, 1,
-             1, -1, 1, 0
+            -1, -1, 0, 1,
+            -1,  1, 0, 0,
+             1,  1, 1, 0,
+             1, -1, 1, 1
         };
         glBufferData(GL_ARRAY_BUFFER, 16 * 4, data, GL_STATIC_DRAW);
     }
@@ -121,10 +122,13 @@ int main(int argc, char **argv)
     ImGui::StyleColorsDark();
 
     // Scenes
-    Scrolling scrolling;
     AccurateInputLag accurateInputLag;
-    std::array<Scene*, 2> scenes {{&scrolling, &accurateInputLag}};
-    Scene *currentScene = scenes[1];
+    PixelArt pixelArt;
+    Scrolling scrolling;
+    renderer.useContext();
+    pixelArt.init();
+    std::array<Scene*, 3> scenes {{&accurateInputLag, &pixelArt, &scrolling}};
+    Scene *currentScene = scenes[0];
 
     // Chrono
     int64_t uSeconds = getTimeMicroseconds();
@@ -243,12 +247,12 @@ int main(int argc, char **argv)
             else nbFramesToUpdate = 1;
         }
         else nbFramesToUpdate = 0;
-        int64_t totalTime = nbFramesToUpdate + *std::max_element(singleFrameTimes.cbegin(), singleFrameTimes.cend())
+        int64_t totalTime = nbFramesToUpdate * *std::max_element(singleFrameTimes.cbegin(), singleFrameTimes.cend())
                 + *std::max_element(drawTimes.cbegin(), drawTimes.cend());
         SDL_DisplayMode displayMode;
         SDL_GetWindowDisplayMode(window, &displayMode);
         int64_t displayRefreshPeriod = 1000000 / displayMode.refresh_rate;
-        totalTime = displayRefreshPeriod - totalTime - 2000;
+        totalTime = displayRefreshPeriod - totalTime - 1000;
         if(syncMode == SyncMode::vSyncWait && !missedSync) while(getTimeMicroseconds() < uSeconds + totalTime);
 
         startTime = uSeconds = getTimeMicroseconds();
@@ -295,7 +299,7 @@ int main(int argc, char **argv)
 
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         int64_t drawTime = getTimeMicroseconds() - startDrawTime;
-        if(drawTime > simulatedDrawTime * 100) drawTime = simulatedDrawTime * 100;
+        if(drawTime < simulatedDrawTime * 100) drawTime = simulatedDrawTime * 100;
         drawTimes[currentFrameDraw] = drawTime;
         ++currentFrameDraw %= drawTimes.size();
         while(getTimeMicroseconds() < startDrawTime + simulatedDrawTime * 100);

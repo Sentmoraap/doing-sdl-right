@@ -12,14 +12,18 @@ class Renderer
         GLuint fbo;
         SDL_GLContext context;
         SDL_Window *window;
+        GLuint textureProgram, textureVbo, textureVao;
 
     public:
         GLuint texture;
 
         void init();
+        void useContext();
         void beginDrawFrame();
         void endDrawFrame();
+        GLuint loadTexture(const char* path);
         void rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
+        void textureRect(GLuint texture, int16_t x0, int16_t y0, int16_t x1, int16_t y1);
         static GLuint loadShaders(const char* vert, const char* frag);
 };
 

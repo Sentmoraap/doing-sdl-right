@@ -38,6 +38,13 @@ enum ScalingFilter : int8_t
     lanczos3
 };
 
+enum WindowMode : int8_t
+{
+    windowed,
+    borderless,
+    fullscreen
+};
+
 int64_t getTimeMicroseconds()
 {
     return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch())
@@ -64,7 +71,8 @@ int main(int argc, char **argv)
     int simulatedUpdateTime = 0; // * 100µs
     int simulatedDrawTime = 0; // * 100µs
     int sizeX = NATIVE_RES_X, sizeY = NATIVE_RES_Y, posX, posY;
-
+    WindowMode windowMode = WindowMode::windowed;
+    int fullscreenDisplay = 0, displayMode = 0;
     SyncMode syncMode = SyncMode::noVSync;
     ScalingFilter scalingFilter = ScalingFilter::nearestNeighbour;
 
@@ -84,6 +92,13 @@ int main(int argc, char **argv)
         "Pixel average",
         "Catmull-Rom",
         "Lanczos-3"
+    };
+
+    char windowModeNames[WindowMode::fullscreen + 1][18] =
+    {
+        "Windowed",
+        "Borderless",
+        "Fullscreen"
     };
 
     // Init SDL
@@ -228,14 +243,94 @@ int main(int argc, char **argv)
         ImGui::DragInt("Draw time *100 µs", &simulatedDrawTime, 0.25, 0, 1000);
         ImGui::Separator();
         ImGui::Text("Settings");
-        SDL_GetWindowPosition(window, &posX, &posY);
+        int nbDisplays = SDL_GetNumVideoDisplays();
+        if(fullscreenDisplay >= nbDisplays) fullscreenDisplay = 0;
+        char itemName[32];
+        snprintf(itemName, 32, "%s on display %hhd", windowModeNames[windowMode], fullscreenDisplay);
+        WindowMode oldVideoMode = windowMode;
+        int oldFullscreenDisplay = fullscreenDisplay;
+        if(ImGui::BeginCombo("Window mode", windowMode == WindowMode::windowed ? windowModeNames[WindowMode::windowed]
+                : itemName, 0))
+        {
+            for(int8_t wm = WindowMode::windowed; wm <= WindowMode::fullscreen; wm++)
+            {
+                if(wm == WindowMode::windowed)
+                {
+                    if(ImGui::Selectable(windowModeNames[WindowMode::windowed], windowMode == WindowMode::windowed))
+                            windowMode = WindowMode::windowed;
+                }
+                else for(int display = 0; display < nbDisplays; display++)
+                {
+                    snprintf(itemName, 32, "%s on display %hhd", windowModeNames[wm], display);
+                    if(ImGui::Selectable(itemName, wm == windowMode && display == fullscreenDisplay))
+                    {
+                        windowMode = static_cast<WindowMode>(wm);
+                        fullscreenDisplay = display;
+                    }
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if(windowMode != oldVideoMode || fullscreenDisplay != oldFullscreenDisplay)
+        {
+            if(fullscreenDisplay != oldFullscreenDisplay) displayMode = 0;
+            SDL_Rect rect;
+            SDL_GetDisplayBounds(fullscreenDisplay, &rect);
+            int centerX = rect.x + rect.w / 2, centerY = rect.y + rect.h / 2;
+            SDL_SetWindowFullscreen(window, 0);
+            switch(windowMode)
+            {
+                case windowed:
+                    SDL_SetWindowSize(window, 1024, 768);
+                    break;
+                case borderless:
+                    SDL_SetWindowSize(window, 2, 2);
+                    SDL_SetWindowPosition(window, centerX, centerY);
+                    SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+                    posX = 0; posY = 0; sizeX = rect.w; sizeY = rect.h;
+                    break;
+                case fullscreen:
+                    SDL_SetWindowSize(window, 2, 2);
+                    SDL_SetWindowPosition(window, centerX, centerY);
+                    SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+                    SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
+                    SDL_DisplayMode dm;
+                    SDL_GetDisplayMode(fullscreenDisplay, displayMode, &dm);
+                    SDL_SetWindowDisplayMode(window, &dm);
+                    posX = 0; posY = 0; sizeX = dm.w; sizeY = dm.h;
+                    break;
+            }
+        }
+        SDL_DisplayMode dm;
+        SDL_GetDisplayMode(fullscreenDisplay, displayMode, &dm);
+        snprintf(itemName, 32, "%dx%d@%d", dm.w, dm.h, dm.refresh_rate);
+        if(ImGui::BeginCombo("Display mode", itemName, 0))
+        {
+            int nbDisplayModes = SDL_GetNumDisplayModes(fullscreenDisplay);
+            for(int i = 0; i < nbDisplayModes; i++)
+            {
+                SDL_GetDisplayMode(fullscreenDisplay, i, &dm);
+                snprintf(itemName, 32, "%dx%d@%d", dm.w, dm.h, dm.refresh_rate);
+                if(ImGui::Selectable(itemName, i == displayMode))
+                {
+                    displayMode = i;
+                    if(windowMode == WindowMode::fullscreen)
+                    {
+                        SDL_SetWindowDisplayMode(window, &dm);
+                        posX = 0; posY = 0; sizeX = dm.w; sizeY = dm.h;
+                    }
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if(windowMode == WindowMode::windowed) SDL_GetWindowPosition(window, &posX, &posY);
         ImGui::DragInt("Position X", &posX, 0.25, -16384, 16384);
         ImGui::DragInt("Position Y", &posY, 0.25, -16384, 16384);
-        SDL_SetWindowPosition(window, posX, posY);
-        SDL_GetWindowSize(window, &sizeX, &sizeY);
+        if(windowMode == WindowMode::windowed) SDL_SetWindowPosition(window, posX, posY);
+        if(windowMode == WindowMode::windowed) SDL_GetWindowSize(window, &sizeX, &sizeY);
         ImGui::DragInt("Size X", &sizeX, 0.25, 1, NATIVE_RES_X * 10);
         ImGui::DragInt("Size Y", &sizeY, 0.25, 1, NATIVE_RES_Y * 10);
-        SDL_SetWindowSize(window, sizeX, sizeY);
+        if(windowMode == WindowMode::windowed) SDL_SetWindowSize(window, sizeX, sizeY);
         ScalingFilter oldScalingFilter = scalingFilter;
         enumCombo("Scaling filter", scalingFilterNames, reinterpret_cast<int8_t&>(scalingFilter),
             ScalingFilter::lanczos3);
@@ -340,8 +435,18 @@ int main(int argc, char **argv)
 
         SDL_GL_MakeCurrent(window, windowContext);
         ImGui::Render();
-        glViewport(0, 0, sizeX, sizeY);
-        glScissor(0, 0, sizeX, sizeY);
+        if(windowMode == WindowMode::windowed)
+        {
+            glViewport(0, 0, sizeX, sizeY);
+            glScissor(0, 0, sizeX, sizeY);
+        }
+        else
+        {
+            int wY;
+            SDL_GetWindowSize(window, nullptr, &wY);
+            glViewport(posX, -posY + wY - sizeY, sizeX, sizeY);
+            glScissor(posX, -posY + wY - sizeY, sizeX, sizeY);
+        }
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
         glActiveTexture(GL_TEXTURE0);

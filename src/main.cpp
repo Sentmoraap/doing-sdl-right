@@ -20,20 +20,38 @@
 #undef main
 #endif
 
-enum SyncMode
+enum SyncMode : int8_t
 {
     noVSync,
     noVSyncTripleBuffer,
     adaptiveSync,
     vSync,
-    vSyncWait,
-    num
+    vSyncWait
+};
+
+enum ScalingFilter : int8_t
+{
+    nearestNeighbour,
+    bilinear,
+    pixelAverage,
+    catmullRom,
+    lanczos3
 };
 
 int64_t getTimeMicroseconds()
 {
     return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch())
                 .count();
+}
+
+void enumCombo(const char *comboName, const char (*enumNames)[32], int8_t &value, int8_t max)
+{
+    if(ImGui::BeginCombo(comboName, enumNames[value], 0))
+    {
+        for(int8_t i = 0; i <= max; i++)
+            if(ImGui::Selectable(enumNames[i], i == value)) value = i;
+        ImGui::EndCombo();
+    }
 }
 
 int main(int argc, char **argv)
@@ -45,15 +63,27 @@ int main(int argc, char **argv)
     int updateRate = 120;
     int simulatedUpdateTime = 0; // * 100µs
     int simulatedDrawTime = 0; // * 100µs
-    SyncMode syncMode = SyncMode::noVSync;
+    int sizeX = NATIVE_RES_X, sizeY = NATIVE_RES_Y, posX, posY;
 
-    char syncModeNames[SyncMode::num][32] =
+    SyncMode syncMode = SyncMode::noVSync;
+    ScalingFilter scalingFilter = ScalingFilter::nearestNeighbour;
+
+    char syncModeNames[SyncMode::vSyncWait + 1][32] =
     {
         "No v-sync",
         "No v-sync + triple buffer",
         "Adaptive sync",
         "V-sync",
         "V-sync + wait"
+    };
+
+    char scalingFilterNames[ScalingFilter::lanczos3 + 1][32] =
+    {
+        "Nearest neighbour",
+        "Bilinear",
+        "Pixel average",
+        "Catmull-Rom",
+        "Lanczos-3"
     };
 
     // Init SDL
@@ -66,6 +96,7 @@ int main(int argc, char **argv)
     SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 0);
 
     // Init render context
     renderer.init();
@@ -191,17 +222,46 @@ int main(int argc, char **argv)
         }
         currentScene->displayImGuiSettings();
         ImGui::Separator();
-        ImGui::Text("Settings");
+        ImGui::Text("Simulated times");
         ImGui::DragInt("Update rate (Hz)", &updateRate, 0.25, 1, 300);
         ImGui::DragInt("Update time *100 µs", &simulatedUpdateTime, 0.25, 0, 1000);
         ImGui::DragInt("Draw time *100 µs", &simulatedDrawTime, 0.25, 0, 1000);
-        SyncMode oldSyncMode = syncMode;
-        if(ImGui::BeginCombo("Sync mode", syncModeNames[syncMode], 0))
+        ImGui::Separator();
+        ImGui::Text("Settings");
+        SDL_GetWindowPosition(window, &posX, &posY);
+        ImGui::DragInt("Position X", &posX, 0.25, -16384, 16384);
+        ImGui::DragInt("Position Y", &posY, 0.25, -16384, 16384);
+        SDL_SetWindowPosition(window, posX, posY);
+        SDL_GetWindowSize(window, &sizeX, &sizeY);
+        ImGui::DragInt("Size X", &sizeX, 0.25, 1, NATIVE_RES_X * 10);
+        ImGui::DragInt("Size Y", &sizeY, 0.25, 1, NATIVE_RES_Y * 10);
+        SDL_SetWindowSize(window, sizeX, sizeY);
+        ScalingFilter oldScalingFilter = scalingFilter;
+        enumCombo("Scaling filter", scalingFilterNames, reinterpret_cast<int8_t&>(scalingFilter),
+            ScalingFilter::lanczos3);
+        if(oldScalingFilter != scalingFilter)
         {
-            for(int8_t i = 0; i < SyncMode::num; i++)
-                if(ImGui::Selectable(syncModeNames[i], i == syncMode)) syncMode = static_cast<SyncMode>(i);
-            ImGui::EndCombo();
+            switch(scalingFilter)
+            {
+                case nearestNeighbour:
+                    glBindTexture(GL_TEXTURE_2D, renderer.texture);
+                    glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+                    glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                    break;
+                case bilinear:
+                    glBindTexture(GL_TEXTURE_2D, renderer.texture);
+                    glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                    glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                    glBindTexture(GL_TEXTURE_2D, 0);
+                    break;
+                default:
+                    // Not implemented
+                    break;
+            }
         }
+        SyncMode oldSyncMode = syncMode;
+        enumCombo("Sync mode", syncModeNames, reinterpret_cast<int8_t&>(syncMode), SyncMode::vSyncWait);
         if(syncMode != oldSyncMode)
         {
             int8_t swapInterval = 0;
@@ -221,7 +281,7 @@ int main(int argc, char **argv)
                 default:
                     break;
             }
-            // Tiple buffer only settable in X server?
+            // Triple buffer only settable in X server?
 
             if(SDL_GL_SetSwapInterval(swapInterval) == -1)
             {
@@ -280,8 +340,8 @@ int main(int argc, char **argv)
 
         SDL_GL_MakeCurrent(window, windowContext);
         ImGui::Render();
-        glViewport(0, 0, NATIVE_RES_X, NATIVE_RES_Y);
-        glScissor(0, 0, NATIVE_RES_X, NATIVE_RES_Y);
+        glViewport(0, 0, sizeX, sizeY);
+        glScissor(0, 0, sizeX, sizeY);
         glClearColor(0, 0, 0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
         glActiveTexture(GL_TEXTURE0);

@@ -1,0 +1,45 @@
+IF(SDL2_LIBRARY AND SDL2_INCLUDE_DIR)
+# in cache already
+SET(SDL2_FIND_QUIETLY TRUE)
+ENDIF(SDL2_LIBRARY AND SDL2_INCLUDE_DIR)
+
+
+FIND_PATH(SDL2_INCLUDE_DIR
+SDL.h
+PATHS
+$ENV{SDL2_DIR}/include
+/usr/local/include
+/usr/include
+/sw/include
+/opt/local/include
+/opt/csw/include
+/opt/include
+PATH_SUFFIXES SDL2 SDL2
+)
+
+FIND_LIBRARY(SDL2_LIBRARY
+NAMES SDL2
+PATHS
+$ENV{SDL2_DIR}/lib
+/usr/local/lib
+/usr/lib
+/usr/local/X11R6/lib
+/usr/X11R6/lib
+/sw/lib
+/opt/local/lib
+/opt/csw/lib
+/opt/lib
+/usr/freeware/lib64
+)
+
+IF(SDL2_LIBRARY AND SDL2_INCLUDE_DIR)
+    SET(SDL2_FOUND "YES")
+    SET( SDL2_LIBRARIES ${SDL2_LIBRARY})
+    IF(NOT SDL2_FIND_QUIETLY)
+        MESSAGE(STATUS "Found SDL2: ${SDL2_LIBRARY}")
+    ENDIF(NOT SDL2_FIND_QUIETLY)
+ELSE(SDL2_LIBRARY AND SDL2_INCLUDE_DIR)
+    IF(NOT SDL2_FIND_QUIETLY)
+        MESSAGE(STATUS "Warning: Unable to find SDL2!")
+    ENDIF(NOT SDL2_FIND_QUIETLY)
+ENDIF(SDL2_LIBRARY AND SDL2_INCLUDE_DIR)

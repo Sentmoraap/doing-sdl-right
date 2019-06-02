@@ -1,4 +1,5 @@
 #include <iostream>
+#include <SDL2/SDL_syswm.h>
 #include "Window.hpp"
 #include "Renderer.hpp"
 #include "imgui/imgui.h"
@@ -14,7 +15,8 @@ const char Window::windowModeNames[WindowMode::fullscreen + 1][18] =
 
 void Window::create()
 {
-    int flags = SDL_WINDOW_OPENGL, sizeX, sizeY, posX, posY;
+    int flags = SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI;
+    int sizeX, sizeY, posX, posY;
    
     SDL_Rect rect;
     SDL_GetDisplayBounds(fullscreenDisplay, &rect);

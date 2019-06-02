@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <GL/glew.h>
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_syswm.h>
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_sdl.h"
 #include "imgui/imgui_impl_opengl3.h"
@@ -24,8 +25,8 @@
 enum SyncMode : int8_t
 {
     noVSync,
-    noVSyncTripleBuffer,
     adaptiveSync,
+    adaptiveSyncWait,
     vSync,
     vSyncWait
 };
@@ -56,6 +57,23 @@ void enumCombo(const char *comboName, const char (*enumNames)[32], int8_t &value
     }
 }
 
+void computeWindowSize(int &posX, int &posY, int &sizeX, int &sizeY)
+{
+    if(NATIVE_RES_Y * sizeX > NATIVE_RES_X * sizeY)
+    {
+        int oldSizeX = sizeX;
+        sizeX = sizeY * NATIVE_RES_X / NATIVE_RES_Y;
+        posX = (oldSizeX - sizeX) / 2;
+    }
+    else
+    {
+        int oldSizeY = sizeY;
+        sizeY = sizeX * NATIVE_RES_Y / NATIVE_RES_X;
+        posY = (oldSizeY - sizeY) / 2;
+    }
+}
+
+
 int main(int argc, char **argv)
 {
     static constexpr uint8_t  UPDATE_TIMING_WINDOW = 0;
@@ -69,13 +87,18 @@ int main(int argc, char **argv)
     SyncMode syncMode = SyncMode::noVSync;
     ScalingFilter scalingFilter = ScalingFilter::nearestNeighbour;
 
+#ifdef _WINDOWS
+    //SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    SetProcessDPIAware();
+#endif
+
     char syncModeNames[SyncMode::vSyncWait + 1][32] =
     {
-        "No v-sync",
-        "No v-sync + triple buffer",
+        "Immediate",
         "Adaptive sync",
+        "Adaptive sync late update",
         "V-sync",
-        "V-sync + wait"
+        "V-sync late update"
     };
 
     char scalingFilterNames[ScalingFilter::lanczos3 + 1][32] =
@@ -256,11 +279,13 @@ int main(int argc, char **argv)
                 break;
                 case Window::borderless:
                     posX = 0; posY = 0; sizeX = rect.w; sizeY = rect.h;
+                    computeWindowSize(posX, posY, sizeX, sizeY);
                 break;
                 case Window::fullscreen:
                     SDL_DisplayMode dm;
                     SDL_GetDisplayMode(window.fullscreenDisplay, window.displayMode, &dm);
                     posX = 0; posY = 0; sizeX = dm.w; sizeY = dm.h;
+                    computeWindowSize(posX, posY, sizeX, sizeY);
                 break;
             }
             window.create();
@@ -303,13 +328,12 @@ int main(int argc, char **argv)
         }
         SyncMode oldSyncMode = syncMode;
         enumCombo("Sync mode", syncModeNames, reinterpret_cast<int8_t&>(syncMode), SyncMode::vSyncWait);
-        if(syncMode != oldSyncMode)
+        if(syncMode != oldSyncMode || recreateWindow)
         {
             int8_t swapInterval = 0;
             switch(syncMode)
             {
                 case noVSync:
-                case noVSyncTripleBuffer:
                     swapInterval = 0;
                     break;
                 case adaptiveSync:
@@ -322,18 +346,26 @@ int main(int argc, char **argv)
                 default:
                     break;
             }
-            // Triple buffer only settable in X server?
-
             if(SDL_GL_SetSwapInterval(swapInterval) == -1)
             {
-                syncMode = vSync;
-                SDL_GL_SetSwapInterval(1);
+                switch(SDL_GL_GetSwapInterval())
+                {
+                    case 0:
+                        syncMode = noVSync;
+                        break;
+                    case 1:
+                        syncMode = vSync;
+                        break;
+                    case -1:
+                        syncMode = adaptiveSync;
+                        break;
+                }
             }
         }
         ImGui::Checkbox("GPU sync", &gpuSync);
         ImGui::End();
 
-        if(syncMode == SyncMode::vSyncWait) gpuSync = true;
+        if(syncMode == SyncMode::vSyncWait || syncMode == SyncMode::adaptiveSyncWait) gpuSync = true;
 
         // Update
         uSeconds = getTimeMicroseconds();
@@ -354,7 +386,7 @@ int main(int argc, char **argv)
         SDL_GetWindowDisplayMode(window.sdlWindow, &displayMode);
         int64_t displayRefreshPeriod = 1000000 / displayMode.refresh_rate;
         totalTime = displayRefreshPeriod - totalTime - 1000;
-        if(syncMode == SyncMode::vSyncWait && !missedSync) while(getTimeMicroseconds() < uSeconds + totalTime);
+        if((syncMode == SyncMode::vSyncWait && !missedSync) || syncMode == SyncMode::adaptiveSyncWait) while(getTimeMicroseconds() < uSeconds + totalTime);
 
         startTime = uSeconds = getTimeMicroseconds();
         if(toUpdate > -1000000 * UPDATE_TIMING_WINDOW) do

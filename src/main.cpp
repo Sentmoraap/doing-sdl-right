@@ -11,6 +11,7 @@
 #include "imgui/imgui_impl_opengl3.h"
 #include "Joysticks.hpp"
 #include "Renderer.hpp"
+#include "Window.hpp"
 #include "Scenes/Scene.hpp"
 #include "Scenes/AccurateInputLag.hpp"
 #include "Scenes/PixelArt.hpp"
@@ -38,12 +39,6 @@ enum ScalingFilter : int8_t
     lanczos3
 };
 
-enum WindowMode : int8_t
-{
-    windowed,
-    borderless,
-    fullscreen
-};
 
 int64_t getTimeMicroseconds()
 {
@@ -71,8 +66,6 @@ int main(int argc, char **argv)
     int simulatedUpdateTime = 0; // * 100µs
     int simulatedDrawTime = 0; // * 100µs
     int sizeX = NATIVE_RES_X, sizeY = NATIVE_RES_Y, posX, posY;
-    WindowMode windowMode = WindowMode::windowed;
-    int fullscreenDisplay = 0, displayMode = 0;
     SyncMode syncMode = SyncMode::noVSync;
     ScalingFilter scalingFilter = ScalingFilter::nearestNeighbour;
 
@@ -93,14 +86,7 @@ int main(int argc, char **argv)
         "Catmull-Rom",
         "Lanczos-3"
     };
-
-    char windowModeNames[WindowMode::fullscreen + 1][18] =
-    {
-        "Windowed",
-        "Borderless",
-        "Fullscreen"
-    };
-
+    
     // Init SDL
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_JOYSTICK);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
@@ -121,58 +107,16 @@ int main(int argc, char **argv)
     joysticks.init();
 
     // Init window and it's context
-    SDL_Window* window = SDL_CreateWindow("SDL test", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-            NATIVE_RES_X, NATIVE_RES_Y, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
-    SDL_GLContext windowContext = SDL_GL_CreateContext(window);
+    Window window;
+    window.create();
     SDL_GL_SetSwapInterval(0); // V-sync OFF
-
-    // Init window rendering
-    GLuint program = Renderer::loadShaders("assets/basic_texture.vert", "assets/basic_texture.frag");
-    glUseProgram(program);
-    glUniform1i(glGetUniformLocation(program, "tex"), 0);
-    GLuint vbo, vao;
-    glGenBuffers(1, &vbo);
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    {
-        GLuint attrib = glGetAttribLocation(program ,"pos");
-        glVertexAttribPointer(attrib, 2, GL_FLOAT, false, 16, (void*)0);
-        glEnableVertexAttribArray(attrib);
-        attrib = glGetAttribLocation(program ,"textureCoord");
-        glVertexAttribPointer(attrib, 2, GL_FLOAT, false, 16, (void*)8);
-        glEnableVertexAttribArray(attrib);
-        glBindFragDataLocation(program, 0, "fragPass");
-        float data[16] =
-        {
-            -1, -1, 0, 1,
-            -1,  1, 0, 0,
-             1,  1, 1, 0,
-             1, -1, 1, 1
-        };
-        glBufferData(GL_ARRAY_BUFFER, 16 * 4, data, GL_STATIC_DRAW);
-    }
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
-    {
-        int32_t err=glGetError();
-        if(err)
-            std::cerr << "Error window render " << gluErrorString(err) << std::endl;
-    }
-
-    // Init ImGui
-    ImGui::CreateContext();
-    //ImGuiIO& io = ImGui::GetIO();
-    ImGui_ImplSDL2_InitForOpenGL(window, windowContext);
-    ImGui_ImplOpenGL3_Init("#version 150");
-    ImGui::StyleColorsDark();
 
     // Scenes
     AccurateInputLag accurateInputLag;
     PixelArt pixelArt;
     Scrolling scrolling;
     renderer.useContext();
-    pixelArt.init();
+    //pixelArt.init();
     std::array<Scene*, 3> scenes {{&accurateInputLag, &pixelArt, &scrolling}};
     Scene *currentScene = scenes[0];
 
@@ -210,14 +154,14 @@ int main(int argc, char **argv)
             if (event.type == SDL_QUIT)
                 return 0;
             if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE
-                && event.window.windowID == SDL_GetWindowID(window))
+                && event.window.windowID == SDL_GetWindowID(window.sdlWindow))
                 return 0;
             if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) return 0;
         }
 
         // ImGui
         ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplSDL2_NewFrame(window);
+        ImGui_ImplSDL2_NewFrame(window.sdlWindow);
         ImGui::NewFrame();
         ImGui::Begin("Stuff");
         ImGui::Text("%6d FPS", frameRate);
@@ -244,93 +188,95 @@ int main(int argc, char **argv)
         ImGui::Separator();
         ImGui::Text("Settings");
         int nbDisplays = SDL_GetNumVideoDisplays();
-        if(fullscreenDisplay >= nbDisplays) fullscreenDisplay = 0;
+        if(window.fullscreenDisplay >= nbDisplays) window.fullscreenDisplay = 0;
         char itemName[32];
-        snprintf(itemName, 32, "%s on display %hhd", windowModeNames[windowMode], fullscreenDisplay);
-        WindowMode oldVideoMode = windowMode;
-        int oldFullscreenDisplay = fullscreenDisplay;
-        if(ImGui::BeginCombo("Window mode", windowMode == WindowMode::windowed ? windowModeNames[WindowMode::windowed]
+        snprintf(itemName, 32, "%s on display %hhd", Window::windowModeNames[window.windowMode], window.fullscreenDisplay);
+        Window::WindowMode oldVideoMode = window.windowMode;
+        bool recreateWindow = false;
+        if(ImGui::BeginCombo("Window mode", window.windowMode == Window::WindowMode::windowed 
+                ? window.windowModeNames[Window::WindowMode::windowed]
                 : itemName, 0))
         {
-            for(int8_t wm = WindowMode::windowed; wm <= WindowMode::fullscreen; wm++)
+            for(int8_t wm = Window::WindowMode::windowed; wm <= Window::WindowMode::fullscreen; wm++)
             {
-                if(wm == WindowMode::windowed)
+                if(wm == Window::WindowMode::windowed)
                 {
-                    if(ImGui::Selectable(windowModeNames[WindowMode::windowed], windowMode == WindowMode::windowed))
-                            windowMode = WindowMode::windowed;
+                    if(ImGui::Selectable(Window::windowModeNames[Window::WindowMode::windowed],
+                        window.windowMode == Window::WindowMode::windowed))
+                    {
+                        window.windowMode = Window::WindowMode::windowed;
+                        recreateWindow = true;
+                    }
                 }
                 else for(int display = 0; display < nbDisplays; display++)
                 {
-                    snprintf(itemName, 32, "%s on display %hhd", windowModeNames[wm], display);
-                    if(ImGui::Selectable(itemName, wm == windowMode && display == fullscreenDisplay))
+                    snprintf(itemName, 32, "%s on display %hhd", window.windowModeNames[wm], display);
+                    if(ImGui::Selectable(itemName, wm == window.windowMode && display == window.fullscreenDisplay))
                     {
-                        windowMode = static_cast<WindowMode>(wm);
-                        fullscreenDisplay = display;
+                        window.windowMode = static_cast<Window::WindowMode>(wm);
+                        window.fullscreenDisplay = display;
+                        recreateWindow = true;
                     }
                 }
             }
             ImGui::EndCombo();
         }
-        if(windowMode != oldVideoMode || fullscreenDisplay != oldFullscreenDisplay)
-        {
-            if(fullscreenDisplay != oldFullscreenDisplay) displayMode = 0;
-            SDL_Rect rect;
-            SDL_GetDisplayBounds(fullscreenDisplay, &rect);
-            int centerX = rect.x + rect.w / 2, centerY = rect.y + rect.h / 2;
-            SDL_SetWindowFullscreen(window, 0);
-            switch(windowMode)
-            {
-                case windowed:
-                    SDL_SetWindowSize(window, 1024, 768);
-                    break;
-                case borderless:
-                    SDL_SetWindowSize(window, 2, 2);
-                    SDL_SetWindowPosition(window, centerX, centerY);
-                    SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
-                    posX = 0; posY = 0; sizeX = rect.w; sizeY = rect.h;
-                    break;
-                case fullscreen:
-                    SDL_SetWindowSize(window, 2, 2);
-                    SDL_SetWindowPosition(window, centerX, centerY);
-                    SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
-                    SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
-                    SDL_DisplayMode dm;
-                    SDL_GetDisplayMode(fullscreenDisplay, displayMode, &dm);
-                    SDL_SetWindowDisplayMode(window, &dm);
-                    posX = 0; posY = 0; sizeX = dm.w; sizeY = dm.h;
-                    break;
-            }
-        }
+       
         SDL_DisplayMode dm;
-        SDL_GetDisplayMode(fullscreenDisplay, displayMode, &dm);
+        SDL_GetDisplayMode(window.fullscreenDisplay, window.displayMode, &dm);
         snprintf(itemName, 32, "%dx%d@%d", dm.w, dm.h, dm.refresh_rate);
         if(ImGui::BeginCombo("Display mode", itemName, 0))
         {
-            int nbDisplayModes = SDL_GetNumDisplayModes(fullscreenDisplay);
+            int nbDisplayModes = SDL_GetNumDisplayModes(window.fullscreenDisplay);
             for(int i = 0; i < nbDisplayModes; i++)
             {
-                SDL_GetDisplayMode(fullscreenDisplay, i, &dm);
+                SDL_GetDisplayMode(window.fullscreenDisplay, i, &dm);
                 snprintf(itemName, 32, "%dx%d@%d", dm.w, dm.h, dm.refresh_rate);
-                if(ImGui::Selectable(itemName, i == displayMode))
+                if(ImGui::Selectable(itemName, i == window.displayMode))
                 {
-                    displayMode = i;
-                    if(windowMode == WindowMode::fullscreen)
-                    {
-                        SDL_SetWindowDisplayMode(window, &dm);
-                        posX = 0; posY = 0; sizeX = dm.w; sizeY = dm.h;
-                    }
+                    window.displayMode = i;
+                    if(window.windowMode == Window::WindowMode::fullscreen)
+                        recreateWindow = true;
                 }
             }
             ImGui::EndCombo();
         }
-        if(windowMode == WindowMode::windowed) SDL_GetWindowPosition(window, &posX, &posY);
+
+        if(recreateWindow)
+        {
+            window.destroy();
+            renderer.useContext();
+            SDL_Rect rect;
+            SDL_GetDisplayBounds(window.fullscreenDisplay, &rect);
+            switch(window.windowMode)
+            {
+                case Window::windowed:
+                    sizeX = NATIVE_RES_X;
+                    sizeY = NATIVE_RES_Y;
+                break;
+                case Window::borderless:
+                    posX = 0; posY = 0; sizeX = rect.w; sizeY = rect.h;
+                break;
+                case Window::fullscreen:
+                    SDL_DisplayMode dm;
+                    SDL_GetDisplayMode(window.fullscreenDisplay, window.displayMode, &dm);
+                    posX = 0; posY = 0; sizeX = dm.w; sizeY = dm.h;
+                break;
+            }
+            window.create();
+            ImGui_ImplOpenGL3_NewFrame();
+            ImGui_ImplSDL2_NewFrame(window.sdlWindow);
+            ImGui::NewFrame();
+        }
+
+        if(window.windowMode == Window::WindowMode::windowed) SDL_GetWindowPosition(window.sdlWindow, &posX, &posY);
         ImGui::DragInt("Position X", &posX, 0.25, -16384, 16384);
         ImGui::DragInt("Position Y", &posY, 0.25, -16384, 16384);
-        if(windowMode == WindowMode::windowed) SDL_SetWindowPosition(window, posX, posY);
-        if(windowMode == WindowMode::windowed) SDL_GetWindowSize(window, &sizeX, &sizeY);
+        if(window.windowMode == Window::WindowMode::windowed) SDL_SetWindowPosition(window.sdlWindow, posX, posY);
+        if(window.windowMode == Window::WindowMode::windowed) SDL_GetWindowSize(window.sdlWindow, &sizeX, &sizeY);
         ImGui::DragInt("Size X", &sizeX, 0.25, 1, NATIVE_RES_X * 10);
         ImGui::DragInt("Size Y", &sizeY, 0.25, 1, NATIVE_RES_Y * 10);
-        if(windowMode == WindowMode::windowed) SDL_SetWindowSize(window, sizeX, sizeY);
+        if(window.windowMode == Window::WindowMode::windowed) SDL_SetWindowSize(window.sdlWindow, sizeX, sizeY);
         ScalingFilter oldScalingFilter = scalingFilter;
         enumCombo("Scaling filter", scalingFilterNames, reinterpret_cast<int8_t&>(scalingFilter),
             ScalingFilter::lanczos3);
@@ -405,7 +351,7 @@ int main(int argc, char **argv)
         int64_t totalTime = nbFramesToUpdate * *std::max_element(singleFrameTimes.cbegin(), singleFrameTimes.cend())
                 + *std::max_element(drawTimes.cbegin(), drawTimes.cend());
         SDL_DisplayMode displayMode;
-        SDL_GetWindowDisplayMode(window, &displayMode);
+        SDL_GetWindowDisplayMode(window.sdlWindow, &displayMode);
         int64_t displayRefreshPeriod = 1000000 / displayMode.refresh_rate;
         totalTime = displayRefreshPeriod - totalTime - 1000;
         if(syncMode == SyncMode::vSyncWait && !missedSync) while(getTimeMicroseconds() < uSeconds + totalTime);
@@ -433,9 +379,9 @@ int main(int argc, char **argv)
         if(err)
             std::cerr << "Error frame render " << gluErrorString(err) << std::endl;
 
-        SDL_GL_MakeCurrent(window, windowContext);
+        window.useContext();
         ImGui::Render();
-        if(windowMode == WindowMode::windowed)
+        if(window.windowMode == Window::WindowMode::windowed)
         {
             glViewport(0, 0, sizeX, sizeY);
             glScissor(0, 0, sizeX, sizeY);
@@ -443,7 +389,7 @@ int main(int argc, char **argv)
         else
         {
             int wY;
-            SDL_GetWindowSize(window, nullptr, &wY);
+            SDL_GetWindowSize(window.sdlWindow, nullptr, &wY);
             glViewport(posX, -posY + wY - sizeY, sizeX, sizeY);
             glScissor(posX, -posY + wY - sizeY, sizeX, sizeY);
         }
@@ -451,9 +397,9 @@ int main(int argc, char **argv)
         glClear(GL_COLOR_BUFFER_BIT);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, renderer.texture);
-        glUseProgram(program);
-        glBindVertexArray(vao);
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glUseProgram(window.program);
+        glBindVertexArray(window.vao);
+        glBindBuffer(GL_ARRAY_BUFFER, window.vbo);
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
         glBindBuffer(GL_ARRAY_BUFFER, 0);
         glBindVertexArray(0);
@@ -468,7 +414,7 @@ int main(int argc, char **argv)
         drawTimes[currentFrameDraw] = drawTime;
         ++currentFrameDraw %= drawTimes.size();
         while(getTimeMicroseconds() < startDrawTime + simulatedDrawTime * 100);
-        SDL_GL_SwapWindow(window);
+        SDL_GL_SwapWindow(window.sdlWindow);
         if(gpuSync) glFinish();
         int64_t lastIterationTime = getTimeMicroseconds() - startTime;
         missedSync = gpuSync && lastIterationTime >= displayRefreshPeriod * 1.5;

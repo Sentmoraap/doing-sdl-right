@@ -1,7 +1,7 @@
 #include <SDL2/SDL.h>
 #include <GL/glew.h>
 
-class Window
+class DisplayWindow
 {
 public:
 
@@ -12,6 +12,15 @@ public:
         fullscreen
     };
 
+    enum SyncMode : int8_t
+    {
+        noVSync,
+        adaptiveSync,
+        adaptiveSyncWait,
+        vSync,
+        vSyncWait
+    };
+
     static const char windowModeNames[WindowMode::fullscreen + 1][18];
 
     WindowMode windowMode = WindowMode::windowed;
@@ -19,9 +28,15 @@ public:
     SDL_GLContext context;
     GLuint program, vbo, vao;
     int fullscreenDisplay = 0, displayMode = 0;
+    bool canVSync, canNoVSync, canAdaptiveSync, tripleBuffer;
 
     void create();
     void useContext();
-    //void initImGui();
+    bool isSyncModeAvailable(SyncMode syncMode);
+    SyncMode getSyncMode();
+    void setSyncMode(SyncMode syncMode);
     void destroy();
+
+private:
+    SyncMode syncMode = SyncMode::noVSync;
 };

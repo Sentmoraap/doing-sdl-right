@@ -12,7 +12,7 @@
 #include "imgui/imgui_impl_opengl3.h"
 #include "Joysticks.hpp"
 #include "Renderer.hpp"
-#include "Window.hpp"
+#include "DisplayWindow.hpp"
 #include "Scenes/Scene.hpp"
 #include "Scenes/AccurateInputLag.hpp"
 #include "Scenes/PixelArt.hpp"
@@ -21,15 +21,6 @@
 #ifdef main
 #undef main
 #endif
-
-enum SyncMode : int8_t
-{
-    noVSync,
-    adaptiveSync,
-    adaptiveSyncWait,
-    vSync,
-    vSyncWait
-};
 
 enum ScalingFilter : int8_t
 {
@@ -78,13 +69,14 @@ int main(int argc, char **argv)
 {
     static constexpr uint8_t  UPDATE_TIMING_WINDOW = 0;
     static constexpr uint8_t  MAX_UPDATE_FRAMES = 10;
+    static constexpr int AUTO_FRAME_DELAY_MARGIN = 1000;
+    static constexpr int ADAPTIVE_SYNC_MISSED_MARGIN = 200;
     bool missedSync = false;
     bool gpuSync = true;
     int updateRate = 120;
     int simulatedUpdateTime = 0; // * 100µs
     int simulatedDrawTime = 0; // * 100µs
     int sizeX = NATIVE_RES_X, sizeY = NATIVE_RES_Y, posX, posY;
-    SyncMode syncMode = SyncMode::noVSync;
     ScalingFilter scalingFilter = ScalingFilter::nearestNeighbour;
 
 #ifdef _WINDOWS
@@ -92,13 +84,13 @@ int main(int argc, char **argv)
     SetProcessDPIAware();
 #endif
 
-    char syncModeNames[SyncMode::vSyncWait + 1][32] =
+    char syncModeNames[DisplayWindow::SyncMode::vSyncWait + 1][32] =
     {
         "Immediate",
         "Adaptive sync",
-        "Adaptive sync late update",
+        "Adaptive sync + frame delay",
         "V-sync",
-        "V-sync late update"
+        "V-sync + frame delay"
     };
 
     char scalingFilterNames[ScalingFilter::lanczos3 + 1][32] =
@@ -109,7 +101,7 @@ int main(int argc, char **argv)
         "Catmull-Rom",
         "Lanczos-3"
     };
-    
+
     // Init SDL
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_JOYSTICK);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, 0);
@@ -130,7 +122,7 @@ int main(int argc, char **argv)
     joysticks.init();
 
     // Init window and it's context
-    Window window;
+    DisplayWindow window;
     window.create();
     SDL_GL_SetSwapInterval(0); // V-sync OFF
 
@@ -139,7 +131,9 @@ int main(int argc, char **argv)
     PixelArt pixelArt;
     Scrolling scrolling;
     renderer.useContext();
-    //pixelArt.init();
+    #ifndef _WINDOWS
+        pixelArt.init();
+    #endif
     std::array<Scene*, 3> scenes {{&accurateInputLag, &pixelArt, &scrolling}};
     Scene *currentScene = scenes[0];
 
@@ -189,6 +183,7 @@ int main(int argc, char **argv)
         ImGui::Begin("Stuff");
         ImGui::Text("%6d FPS", frameRate);
         ImGui::Text("%6d µs", iterationTime);
+        if(missedSync) ImGui::Text("VBL missed");
         ImGui::Separator();
         ImGui::Text("Scene");
         if(ImGui::BeginCombo("", currentScene->getName(), 0))
@@ -213,21 +208,21 @@ int main(int argc, char **argv)
         int nbDisplays = SDL_GetNumVideoDisplays();
         if(window.fullscreenDisplay >= nbDisplays) window.fullscreenDisplay = 0;
         char itemName[32];
-        snprintf(itemName, 32, "%s on display %hhd", Window::windowModeNames[window.windowMode], window.fullscreenDisplay);
-        Window::WindowMode oldVideoMode = window.windowMode;
+        snprintf(itemName, 32, "%s on display %hhd", DisplayWindow::windowModeNames[window.windowMode],
+                window.fullscreenDisplay);
         bool recreateWindow = false;
-        if(ImGui::BeginCombo("Window mode", window.windowMode == Window::WindowMode::windowed 
-                ? window.windowModeNames[Window::WindowMode::windowed]
+        if(ImGui::BeginCombo("Window mode", window.windowMode == DisplayWindow::WindowMode::windowed
+                ? window.windowModeNames[DisplayWindow::WindowMode::windowed]
                 : itemName, 0))
         {
-            for(int8_t wm = Window::WindowMode::windowed; wm <= Window::WindowMode::fullscreen; wm++)
+            for(int8_t wm = DisplayWindow::WindowMode::windowed; wm <= DisplayWindow::WindowMode::fullscreen; wm++)
             {
-                if(wm == Window::WindowMode::windowed)
+                if(wm == DisplayWindow::WindowMode::windowed)
                 {
-                    if(ImGui::Selectable(Window::windowModeNames[Window::WindowMode::windowed],
-                        window.windowMode == Window::WindowMode::windowed))
+                    if(ImGui::Selectable(DisplayWindow::windowModeNames[DisplayWindow::WindowMode::windowed],
+                        window.windowMode == DisplayWindow::WindowMode::windowed))
                     {
-                        window.windowMode = Window::WindowMode::windowed;
+                        window.windowMode = DisplayWindow::WindowMode::windowed;
                         recreateWindow = true;
                     }
                 }
@@ -236,7 +231,7 @@ int main(int argc, char **argv)
                     snprintf(itemName, 32, "%s on display %hhd", window.windowModeNames[wm], display);
                     if(ImGui::Selectable(itemName, wm == window.windowMode && display == window.fullscreenDisplay))
                     {
-                        window.windowMode = static_cast<Window::WindowMode>(wm);
+                        window.windowMode = static_cast<DisplayWindow::WindowMode>(wm);
                         window.fullscreenDisplay = display;
                         recreateWindow = true;
                     }
@@ -244,7 +239,7 @@ int main(int argc, char **argv)
             }
             ImGui::EndCombo();
         }
-       
+
         SDL_DisplayMode dm;
         SDL_GetDisplayMode(window.fullscreenDisplay, window.displayMode, &dm);
         snprintf(itemName, 32, "%dx%d@%d", dm.w, dm.h, dm.refresh_rate);
@@ -258,7 +253,7 @@ int main(int argc, char **argv)
                 if(ImGui::Selectable(itemName, i == window.displayMode))
                 {
                     window.displayMode = i;
-                    if(window.windowMode == Window::WindowMode::fullscreen)
+                    if(window.windowMode == DisplayWindow::WindowMode::fullscreen)
                         recreateWindow = true;
                 }
             }
@@ -273,15 +268,15 @@ int main(int argc, char **argv)
             SDL_GetDisplayBounds(window.fullscreenDisplay, &rect);
             switch(window.windowMode)
             {
-                case Window::windowed:
+                case DisplayWindow::windowed:
                     sizeX = NATIVE_RES_X;
                     sizeY = NATIVE_RES_Y;
                 break;
-                case Window::borderless:
+                case DisplayWindow::borderless:
                     posX = 0; posY = 0; sizeX = rect.w; sizeY = rect.h;
                     computeWindowSize(posX, posY, sizeX, sizeY);
                 break;
-                case Window::fullscreen:
+                case DisplayWindow::fullscreen:
                     SDL_DisplayMode dm;
                     SDL_GetDisplayMode(window.fullscreenDisplay, window.displayMode, &dm);
                     posX = 0; posY = 0; sizeX = dm.w; sizeY = dm.h;
@@ -292,16 +287,21 @@ int main(int argc, char **argv)
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplSDL2_NewFrame(window.sdlWindow);
             ImGui::NewFrame();
+            ImGui::Begin("Stuff");
         }
 
-        if(window.windowMode == Window::WindowMode::windowed) SDL_GetWindowPosition(window.sdlWindow, &posX, &posY);
+        if(window.windowMode == DisplayWindow::WindowMode::windowed)
+                SDL_GetWindowPosition(window.sdlWindow, &posX, &posY);
         ImGui::DragInt("Position X", &posX, 0.25, -16384, 16384);
         ImGui::DragInt("Position Y", &posY, 0.25, -16384, 16384);
-        if(window.windowMode == Window::WindowMode::windowed) SDL_SetWindowPosition(window.sdlWindow, posX, posY);
-        if(window.windowMode == Window::WindowMode::windowed) SDL_GetWindowSize(window.sdlWindow, &sizeX, &sizeY);
+        if(window.windowMode == DisplayWindow::WindowMode::windowed)
+        {
+            SDL_SetWindowPosition(window.sdlWindow, posX, posY);
+            SDL_GetWindowSize(window.sdlWindow, &sizeX, &sizeY);
+        }
         ImGui::DragInt("Size X", &sizeX, 0.25, 1, NATIVE_RES_X * 10);
         ImGui::DragInt("Size Y", &sizeY, 0.25, 1, NATIVE_RES_Y * 10);
-        if(window.windowMode == Window::WindowMode::windowed) SDL_SetWindowSize(window.sdlWindow, sizeX, sizeY);
+        if(window.windowMode == DisplayWindow::WindowMode::windowed) SDL_SetWindowSize(window.sdlWindow, sizeX, sizeY);
         ScalingFilter oldScalingFilter = scalingFilter;
         enumCombo("Scaling filter", scalingFilterNames, reinterpret_cast<int8_t&>(scalingFilter),
             ScalingFilter::lanczos3);
@@ -326,46 +326,22 @@ int main(int argc, char **argv)
                     break;
             }
         }
-        SyncMode oldSyncMode = syncMode;
-        enumCombo("Sync mode", syncModeNames, reinterpret_cast<int8_t&>(syncMode), SyncMode::vSyncWait);
-        if(syncMode != oldSyncMode || recreateWindow)
+        if(window.tripleBuffer) ImGui::Text("Triple buffer detected. This program may not behave as intended.");
+        DisplayWindow::SyncMode syncMode = window.getSyncMode();
+        if(ImGui::BeginCombo("Sync mode", syncModeNames[syncMode], 0))
         {
-            int8_t swapInterval = 0;
-            switch(syncMode)
-            {
-                case noVSync:
-                    swapInterval = 0;
-                    break;
-                case adaptiveSync:
-                    swapInterval = -1;
-                    break;
-                case vSync:
-                case vSyncWait:
-                    swapInterval = 1;
-                    break;
-                default:
-                    break;
-            }
-            if(SDL_GL_SetSwapInterval(swapInterval) == -1)
-            {
-                switch(SDL_GL_GetSwapInterval())
-                {
-                    case 0:
-                        syncMode = noVSync;
-                        break;
-                    case 1:
-                        syncMode = vSync;
-                        break;
-                    case -1:
-                        syncMode = adaptiveSync;
-                        break;
-                }
-            }
+            for(int i = 0; i <= DisplayWindow::SyncMode::vSyncWait; i++)
+                    if(window.isSyncModeAvailable(static_cast<DisplayWindow::SyncMode>(i))
+                            && ImGui::Selectable(syncModeNames[i], i == syncMode))
+                                    window.setSyncMode(static_cast<DisplayWindow::SyncMode>(i));
+            ImGui::EndCombo();
         }
         ImGui::Checkbox("GPU sync", &gpuSync);
         ImGui::End();
 
-        if(syncMode == SyncMode::vSyncWait || syncMode == SyncMode::adaptiveSyncWait) gpuSync = true;
+        syncMode = window.getSyncMode();
+        if(syncMode == DisplayWindow::SyncMode::vSyncWait
+            || syncMode == DisplayWindow::SyncMode::adaptiveSyncWait) gpuSync = true;
 
         // Update
         uSeconds = getTimeMicroseconds();
@@ -376,7 +352,8 @@ int main(int argc, char **argv)
         uint8_t nbFramesToUpdate;
         if(toUpdate > -1000000 * UPDATE_TIMING_WINDOW)
         {
-            if(toUpdate > 100000 * UPDATE_TIMING_WINDOW) nbFramesToUpdate = static_cast<uint8_t>(1 + (toUpdate - 100000 * UPDATE_TIMING_WINDOW) / 1000000);
+            if(toUpdate > 100000 * UPDATE_TIMING_WINDOW)
+                    nbFramesToUpdate = static_cast<uint8_t>(1 + (toUpdate - 100000 * UPDATE_TIMING_WINDOW) / 1000000);
             else nbFramesToUpdate = 1;
         }
         else nbFramesToUpdate = 0;
@@ -386,12 +363,15 @@ int main(int argc, char **argv)
         SDL_GetWindowDisplayMode(window.sdlWindow, &displayMode);
         int64_t displayRefreshPeriod = 1000000 / displayMode.refresh_rate;
         totalTime = displayRefreshPeriod - totalTime - 1000;
-        if((syncMode == SyncMode::vSyncWait && !missedSync) || syncMode == SyncMode::adaptiveSyncWait) while(getTimeMicroseconds() < uSeconds + totalTime);
+        if((syncMode == DisplayWindow::SyncMode::vSyncWait && !missedSync)
+                || syncMode == DisplayWindow::SyncMode::adaptiveSyncWait)
+                        while(getTimeMicroseconds() < uSeconds + totalTime);
 
         startTime = uSeconds = getTimeMicroseconds();
         if(toUpdate > -1000000 * UPDATE_TIMING_WINDOW) do
         {
             int64_t frameTime = getTimeMicroseconds();
+            SDL_PumpEvents();
             currentScene->update(frameRate);
             frameTime = getTimeMicroseconds() - frameTime;
             if(frameTime < simulatedUpdateTime * 100) frameTime = simulatedUpdateTime * 100;
@@ -413,7 +393,7 @@ int main(int argc, char **argv)
 
         window.useContext();
         ImGui::Render();
-        if(window.windowMode == Window::WindowMode::windowed)
+        if(window.windowMode == DisplayWindow::WindowMode::windowed)
         {
             glViewport(0, 0, sizeX, sizeY);
             glScissor(0, 0, sizeX, sizeY);

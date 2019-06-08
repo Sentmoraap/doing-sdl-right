@@ -107,7 +107,6 @@ void DisplayWindow::create()
     SDL_GL_SwapWindow(sdlWindow);
     uint8_t col[3];
     glReadPixels(0, 0, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, col);
-    glFinish();
     tripleBuffer = col[0] > 0;
     if(!isSyncModeAvailable(syncMode))
     {
@@ -137,10 +136,8 @@ bool DisplayWindow::isSyncModeAvailable(SyncMode syncMode)
         case noVSync:
             return canNoVSync;
         case adaptiveSync:
-        case adaptiveSyncWait:
             return canAdaptiveSync;
         case vSync:
-        case vSyncWait:
             return canVSync;
         default:
             return false;
@@ -165,13 +162,17 @@ void DisplayWindow::setSyncMode(SyncMode syncMode)
             swapInterval = -1;
             break;
         case vSync:
-        case vSyncWait:
             swapInterval = 1;
             break;
         default:
             break;
     }
     SDL_GL_SetSwapInterval(swapInterval);
+}
+
+void DisplayWindow::swap()
+{
+    SDL_GL_SwapWindow(sdlWindow);
 }
 
 void DisplayWindow::destroy()

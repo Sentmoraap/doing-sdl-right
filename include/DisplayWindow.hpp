@@ -16,9 +16,7 @@ public:
     {
         noVSync,
         adaptiveSync,
-        adaptiveSyncWait,
-        vSync,
-        vSyncWait
+        vSync
     };
 
     static const char windowModeNames[WindowMode::fullscreen + 1][18];
@@ -35,6 +33,7 @@ public:
     bool isSyncModeAvailable(SyncMode syncMode);
     SyncMode getSyncMode();
     void setSyncMode(SyncMode syncMode);
+    void swap();
     void destroy();
 
 private:

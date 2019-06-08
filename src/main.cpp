@@ -31,6 +31,12 @@ enum ScalingFilter : int8_t
     lanczos3
 };
 
+enum InputLagMitigation : int8_t
+{
+    none,
+    gpuSync,
+    frameDelay
+};
 
 int64_t getTimeMicroseconds()
 {
@@ -38,7 +44,7 @@ int64_t getTimeMicroseconds()
                 .count();
 }
 
-void enumCombo(const char *comboName, const char (*enumNames)[32], int8_t &value, int8_t max)
+void enumCombo(const char *comboName, const char (*enumNames)[40], int8_t &value, int8_t max)
 {
     if(ImGui::BeginCombo(comboName, enumNames[value], 0))
     {
@@ -64,42 +70,51 @@ void computeWindowSize(int &posX, int &posY, int &sizeX, int &sizeY)
     }
 }
 
+void gpuHardSync()
+{
+    uint8_t col[3];
+    glReadPixels(0, 0, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, col);
+}
 
 int main(int argc, char **argv)
 {
     static constexpr uint8_t  UPDATE_TIMING_WINDOW = 0;
     static constexpr uint8_t  MAX_UPDATE_FRAMES = 10;
     static constexpr int AUTO_FRAME_DELAY_MARGIN = 1000;
-    static constexpr int ADAPTIVE_SYNC_MISSED_MARGIN = 200;
     bool missedSync = false;
-    bool gpuSync = true;
     int updateRate = 120;
     int simulatedUpdateTime = 0; // * 100µs
     int simulatedDrawTime = 0; // * 100µs
     int sizeX = NATIVE_RES_X, sizeY = NATIVE_RES_Y, posX, posY;
     ScalingFilter scalingFilter = ScalingFilter::nearestNeighbour;
+    InputLagMitigation inputLagMitigation = InputLagMitigation::none;
 
 #ifdef _WINDOWS
     //SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     SetProcessDPIAware();
 #endif
 
-    char syncModeNames[DisplayWindow::SyncMode::vSyncWait + 1][32] =
+    char syncModeNames[DisplayWindow::SyncMode::vSync + 1][40] =
     {
-        "Immediate",
-        "Adaptive sync",
-        "Adaptive sync + frame delay",
-        "V-sync",
-        "V-sync + frame delay"
+        "Off",
+        "Adaptive",
+        "On",
     };
 
-    char scalingFilterNames[ScalingFilter::lanczos3 + 1][32] =
+    char scalingFilterNames[ScalingFilter::lanczos3 + 1][40] =
     {
         "Nearest neighbour",
         "Bilinear",
         "Pixel average",
         "Catmull-Rom",
         "Lanczos-3"
+    };
+
+    char inputLagMitigationNames[InputLagMitigation::frameDelay + 1][40] =
+    {
+        "None",
+        "GPU hard sync",
+        "GPU hard sync + predictive waiting"
     };
 
     // Init SDL
@@ -140,12 +155,17 @@ int main(int argc, char **argv)
     // Chrono
     int64_t uSeconds = getTimeMicroseconds();
     int64_t prevUseconds = uSeconds;
-    int64_t toUpdate = 0;
+    int64_t toUpdate = 900000;
     uint8_t currentFrameUpdate = 0, currentFrameDraw = 0;
     std::array<int64_t, 16> frameTimes;
     std::array<int64_t, frameTimes.size()> iterationTimes;
     std::array<int64_t, 6> singleFrameTimes;
-    std::array<int64_t, 6> drawTimes;
+    std::array<int64_t, singleFrameTimes.size()> drawTimes;
+    for(unsigned int i = 0; i < singleFrameTimes.size(); i++)
+    {
+        singleFrameTimes[i] = 0;// 1000000;
+        drawTimes[i] = 0;// 1000000;
+    }
     uint8_t currentFrame = 0;
 
     // Main loop
@@ -328,23 +348,25 @@ int main(int argc, char **argv)
         }
         if(window.tripleBuffer) ImGui::Text("Triple buffer detected. This program may not behave as intended.");
         DisplayWindow::SyncMode syncMode = window.getSyncMode();
-        if(ImGui::BeginCombo("Sync mode", syncModeNames[syncMode], 0))
+        if(ImGui::BeginCombo("V-Sync", syncModeNames[syncMode], 0))
         {
-            for(int i = 0; i <= DisplayWindow::SyncMode::vSyncWait; i++)
+            for(int i = 0; i <= DisplayWindow::SyncMode::vSync; i++)
                     if(window.isSyncModeAvailable(static_cast<DisplayWindow::SyncMode>(i))
                             && ImGui::Selectable(syncModeNames[i], i == syncMode))
                                     window.setSyncMode(static_cast<DisplayWindow::SyncMode>(i));
             ImGui::EndCombo();
         }
-        ImGui::Checkbox("GPU sync", &gpuSync);
+        enumCombo("Input lag mitigation", inputLagMitigationNames, reinterpret_cast<int8_t&>(inputLagMitigation),
+                syncMode == DisplayWindow::SyncMode::noVSync ? InputLagMitigation::gpuSync
+                                                             : InputLagMitigation::frameDelay);
         ImGui::End();
 
         syncMode = window.getSyncMode();
-        if(syncMode == DisplayWindow::SyncMode::vSyncWait
-            || syncMode == DisplayWindow::SyncMode::adaptiveSyncWait) gpuSync = true;
+        if(syncMode == DisplayWindow::SyncMode::noVSync && inputLagMitigation == InputLagMitigation::frameDelay)
+            inputLagMitigation = InputLagMitigation::gpuSync;
 
         // Update
-        uSeconds = getTimeMicroseconds();
+        uSeconds = startTime;// getTimeMicroseconds();
         toUpdate += (uSeconds - prevUseconds) * updateRate;
         prevUseconds = uSeconds;
 
@@ -363,11 +385,10 @@ int main(int argc, char **argv)
         SDL_GetWindowDisplayMode(window.sdlWindow, &displayMode);
         int64_t displayRefreshPeriod = 1000000 / displayMode.refresh_rate;
         totalTime = displayRefreshPeriod - totalTime - 1000;
-        if((syncMode == DisplayWindow::SyncMode::vSyncWait && !missedSync)
-                || syncMode == DisplayWindow::SyncMode::adaptiveSyncWait)
+        if(!missedSync && inputLagMitigation == InputLagMitigation::frameDelay)
                         while(getTimeMicroseconds() < uSeconds + totalTime);
 
-        startTime = uSeconds = getTimeMicroseconds();
+        int64_t updateStartTime = uSeconds = getTimeMicroseconds();
         if(toUpdate > -1000000 * UPDATE_TIMING_WINDOW) do
         {
             int64_t frameTime = getTimeMicroseconds();
@@ -426,10 +447,24 @@ int main(int argc, char **argv)
         drawTimes[currentFrameDraw] = drawTime;
         ++currentFrameDraw %= drawTimes.size();
         while(getTimeMicroseconds() < startDrawTime + simulatedDrawTime * 100);
-        SDL_GL_SwapWindow(window.sdlWindow);
-        if(gpuSync) glFinish();
-        int64_t lastIterationTime = getTimeMicroseconds() - startTime;
-        missedSync = gpuSync && lastIterationTime >= displayRefreshPeriod * 1.5;
-        iterationTimes[currentFrame] = lastIterationTime;
+        if(inputLagMitigation >= InputLagMitigation::gpuSync) gpuHardSync();
+        int64_t beforeSwapTime = getTimeMicroseconds();
+        window.swap();
+        if(inputLagMitigation >= InputLagMitigation::gpuSync) gpuHardSync();
+        int64_t afterSwapTime = getTimeMicroseconds();
+        if(inputLagMitigation >= InputLagMitigation::gpuSync) switch(window.getSyncMode())
+        {
+            case DisplayWindow::SyncMode::noVSync:
+                missedSync = false;
+                break;
+            case DisplayWindow::SyncMode::adaptiveSync:
+                missedSync = false;// afterSwapTime - beforeSwapTime <= 500;
+                break;
+            case DisplayWindow::SyncMode::vSync:
+                missedSync = (afterSwapTime - startTime) >= displayRefreshPeriod * 1.5;
+                break;
+        }
+        else missedSync = false;
+        iterationTimes[currentFrame] = afterSwapTime - updateStartTime;
     }
 }

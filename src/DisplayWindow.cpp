@@ -172,6 +172,7 @@ void DisplayWindow::setSyncMode(SyncMode syncMode)
 
 void DisplayWindow::swap()
 {
+    //std::cout << SDL_GL_GetSwapInterval() << std::endl;
     SDL_GL_SwapWindow(sdlWindow);
 }
 

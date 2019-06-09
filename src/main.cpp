@@ -15,6 +15,7 @@
 #include "DisplayWindow.hpp"
 #include "Scenes/Scene.hpp"
 #include "Scenes/AccurateInputLag.hpp"
+#include "Scenes/GhettoInputLag.hpp"
 #include "Scenes/PixelArt.hpp"
 #include "Scenes/Scrolling.hpp"
 
@@ -81,7 +82,7 @@ int main(int argc, char **argv)
     static constexpr uint8_t  UPDATE_TIMING_WINDOW = 0;
     static constexpr uint8_t  MAX_UPDATE_FRAMES = 10;
     static constexpr int AUTO_FRAME_DELAY_MARGIN = 1000;
-    bool missedSync = false;
+    bool missedSync = true;
     int updateRate = 120;
     int simulatedUpdateTime = 0; // * 100µs
     int simulatedDrawTime = 0; // * 100µs
@@ -139,23 +140,23 @@ int main(int argc, char **argv)
     // Init window and it's context
     DisplayWindow window;
     window.create();
-    SDL_GL_SetSwapInterval(0); // V-sync OFF
 
     // Scenes
     AccurateInputLag accurateInputLag;
+    GhettoInputLag ghettoInputLag;
     PixelArt pixelArt;
     Scrolling scrolling;
     renderer.useContext();
     #ifndef _WINDOWS
         pixelArt.init();
     #endif
-    std::array<Scene*, 3> scenes {{&accurateInputLag, &pixelArt, &scrolling}};
+    std::array<Scene*, 4> scenes {{&accurateInputLag, &ghettoInputLag, &pixelArt, &scrolling}};
     Scene *currentScene = scenes[0];
 
     // Chrono
     int64_t uSeconds = getTimeMicroseconds();
     int64_t prevUseconds = uSeconds;
-    int64_t toUpdate = 900000;
+    int64_t toUpdate = 0;
     uint8_t currentFrameUpdate = 0, currentFrameDraw = 0;
     std::array<int64_t, 16> frameTimes;
     std::array<int64_t, frameTimes.size()> iterationTimes;
@@ -163,8 +164,8 @@ int main(int argc, char **argv)
     std::array<int64_t, singleFrameTimes.size()> drawTimes;
     for(unsigned int i = 0; i < singleFrameTimes.size(); i++)
     {
-        singleFrameTimes[i] = 0;// 1000000;
-        drawTimes[i] = 0;// 1000000;
+        singleFrameTimes[i] = 1000000;
+        drawTimes[i] = 1000000;
     }
     uint8_t currentFrame = 0;
 
@@ -203,7 +204,7 @@ int main(int argc, char **argv)
         ImGui::Begin("Stuff");
         ImGui::Text("%6d FPS", frameRate);
         ImGui::Text("%6d µs", iterationTime);
-        if(missedSync) ImGui::Text("VBL missed");
+        //if(missedSync) ImGui::Text("VBL missed");
         ImGui::Separator();
         ImGui::Text("Scene");
         if(ImGui::BeginCombo("", currentScene->getName(), 0))
@@ -384,7 +385,7 @@ int main(int argc, char **argv)
         SDL_DisplayMode displayMode;
         SDL_GetWindowDisplayMode(window.sdlWindow, &displayMode);
         int64_t displayRefreshPeriod = 1000000 / displayMode.refresh_rate;
-        totalTime = displayRefreshPeriod - totalTime - 1000;
+        totalTime = displayRefreshPeriod - totalTime - AUTO_FRAME_DELAY_MARGIN;
         if(!missedSync && inputLagMitigation == InputLagMitigation::frameDelay)
                         while(getTimeMicroseconds() < uSeconds + totalTime);
 
@@ -393,7 +394,7 @@ int main(int argc, char **argv)
         {
             int64_t frameTime = getTimeMicroseconds();
             SDL_PumpEvents();
-            currentScene->update(frameRate);
+            currentScene->update(updateRate);
             frameTime = getTimeMicroseconds() - frameTime;
             if(frameTime < simulatedUpdateTime * 100) frameTime = simulatedUpdateTime * 100;
             singleFrameTimes[currentFrameUpdate] = frameTime;
@@ -458,7 +459,7 @@ int main(int argc, char **argv)
                 missedSync = false;
                 break;
             case DisplayWindow::SyncMode::adaptiveSync:
-                missedSync = false;// afterSwapTime - beforeSwapTime <= 500;
+                missedSync = false;// afterSwapTime - beforeSwapTime <= 700;
                 break;
             case DisplayWindow::SyncMode::vSync:
                 missedSync = (afterSwapTime - startTime) >= displayRefreshPeriod * 1.5;

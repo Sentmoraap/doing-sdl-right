@@ -87,7 +87,6 @@ int main(int argc, char **argv)
     int updateRate = 120;
     int simulatedUpdateTime = 0; // * 100µs
     int simulatedDrawTime = 0; // * 100µs
-    int waitTime = 0;
     int sizeX = NATIVE_RES_X, sizeY = NATIVE_RES_Y, posX, posY;
     ScalingFilter scalingFilter = ScalingFilter::nearestNeighbour;
     InputLagMitigation inputLagMitigation = InputLagMitigation::none;
@@ -161,6 +160,7 @@ int main(int argc, char **argv)
     int64_t prevUseconds = uSeconds;
     int64_t toUpdate = 0;
     uint8_t currentFrameUpdate = 0, currentFrameDraw = 0;
+    int64_t waitTime;
     std::array<int64_t, 16> frameTimes;
     std::array<int64_t, frameTimes.size()> iterationTimes;
     std::array<int64_t, frameTimes.size()> remainTimes;

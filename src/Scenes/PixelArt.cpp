@@ -4,7 +4,7 @@
 
 PixelArt::PixelArt()
 {
-    strcpy(name, "Pixel art");
+    strcpy_s(name, sizeof(name), "Pixel art");
 }
 
 void PixelArt::init()

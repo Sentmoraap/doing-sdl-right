@@ -7,7 +7,7 @@
 
 Scrolling::Scrolling()
 {
-    strcpy(name, "Scrolling");
+    strcpy_s(name, sizeof(name), "Scrolling");
 }
 
 void Scrolling::update(uint16_t frameRate)

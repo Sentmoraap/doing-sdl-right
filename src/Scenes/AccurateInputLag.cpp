@@ -5,7 +5,7 @@
 
 AccurateInputLag::AccurateInputLag()
 {
-    strcpy(name, "Accurate input lag");
+    strcpy_s(name, sizeof(name), "Accurate input lag");
 }
 
 void AccurateInputLag::update(uint16_t frameRate)

@@ -1,6 +1,9 @@
 #include "Renderer.hpp"
-#include "SDL2/SDL_image.h"
 #include <iostream>
+
+#ifndef _WINDOWS
+#include "SDL2/SDL_image.h"
+#endif
 
 Renderer renderer;
 
@@ -76,6 +79,7 @@ void Renderer::endDrawFrame()
 
 GLuint Renderer::loadTexture(const char* path)
 {
+#ifndef _WINDOWS
     SDL_Surface *surface = IMG_Load(path);
     GLuint ret;
     glGenTextures(1, &ret);
@@ -86,6 +90,9 @@ GLuint Renderer::loadTexture(const char* path)
     glBindTexture(GL_TEXTURE_2D, 0);
     SDL_FreeSurface(surface);
     return ret;
+#else
+    return 0;
+#endif
 }
 
 void Renderer::rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
@@ -137,7 +144,7 @@ GLuint Renderer::loadShaders(const char* vert, const char* frag)
     FILE* f;
 
     // Load and compile the vertex shader
-    f=fopen(vert,"rt");
+    fopen_s(&f, vert, "rt");
     length=fread(buffer,1,16384,f);
     fclose(f);
     glShaderSource(vertexShader,1,&buf,&length);
@@ -146,7 +153,7 @@ GLuint Renderer::loadShaders(const char* vert, const char* frag)
     if(length) std::cout << "Vertex shader: " << buffer << std::endl;
 
     // Load and compile the fragment shader
-    f=fopen(frag,"rt");
+    fopen_s(&f, frag, "rt");
     length=fread(buffer,1,16384,f);
     fclose(f);
     glShaderSource(fragmentShader,1,&buf,&length);

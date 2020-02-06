@@ -6,7 +6,7 @@
 
 GhettoInputLag::GhettoInputLag()
 {
-    strcpy(name, "Ghetto input lag");
+    strcpy_s(name, sizeof(name), "Ghetto input lag");
 }
 
 void GhettoInputLag::displayImGuiSettings()

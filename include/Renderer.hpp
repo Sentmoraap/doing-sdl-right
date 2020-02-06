@@ -13,17 +13,20 @@ class Renderer
         SDL_GLContext context;
         SDL_Window *window;
         GLuint textureProgram, textureVbo, textureVao;
+        GLuint longProgram, longVbo, longVao;
+        uint64_t longInstanceTime; // nanoseconds
 
     public:
         GLuint texture;
 
         void init();
         void useContext();
-        void beginDrawFrame();
+        void beginDrawFrame(GLsync sync);
         void endDrawFrame();
         GLuint loadTexture(const char* path);
         void rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
         void textureRect(GLuint texture, int16_t x0, int16_t y0, int16_t x1, int16_t y1);
+        void longDraw(uint64_t microseconds);
         static GLuint loadShaders(const char* vert, const char* frag);
 };
 

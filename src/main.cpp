@@ -130,7 +130,7 @@ int main(int argc, char **argv)
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 0);
-    //SDL_GL_SetAttribute(SDL_GL_CONTEXT_RELEASE_BEHAVIOR, 0);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_RELEASE_BEHAVIOR, 0);
 
     // Init render context
     renderer.init();
@@ -409,15 +409,21 @@ int main(int argc, char **argv)
 
         // Draw
         int64_t startDrawTime = getTimeMicroseconds();
-        renderer.beginDrawFrame();
+        GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        renderer.beginDrawFrame(sync);
+        renderer.longDraw(simulatedDrawTime * 100);
         currentScene->draw();
         renderer.endDrawFrame();
+        sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+
         int32_t err=glGetError();
         if(err)
             std::cerr << "Error frame render " << gluErrorString(err) << std::endl;
 
         window.useContext();
+        glWaitSync(sync, 0, GL_TIMEOUT_IGNORED);
         ImGui::Render();
+
         if(window.windowMode == DisplayWindow::WindowMode::windowed)
         {
             glViewport(0, 0, sizeX, sizeY);
@@ -447,10 +453,9 @@ int main(int argc, char **argv)
 
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         int64_t drawTime = getTimeMicroseconds() - startDrawTime;
-        if(drawTime < simulatedDrawTime * 100) drawTime = simulatedDrawTime * 100;
+        //if(drawTime < simulatedDrawTime * 100) drawTime = simulatedDrawTime * 100;
         drawTimes[currentFrameDraw] = drawTime;
         ++currentFrameDraw %= drawTimes.size();
-        while(getTimeMicroseconds() < startDrawTime + simulatedDrawTime * 100);
         if(inputLagMitigation >= InputLagMitigation::gpuSync) gpuHardSync();
         int64_t beforeSwapTime = getTimeMicroseconds();
         window.swap();

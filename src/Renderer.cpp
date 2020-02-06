@@ -1,5 +1,6 @@
 #include "Renderer.hpp"
 #include <iostream>
+#include <chrono>
 
 #ifndef _WINDOWS
 #include "SDL2/SDL_image.h"
@@ -48,10 +49,43 @@ void Renderer::init()
         glEnableVertexAttribArray(attrib);
         glBindFragDataLocation(textureProgram, 0, "fragPass");
     }
+
+    // Long drawing
+    longProgram = Renderer::loadShaders("assets/long_rendering.vert", "assets/long_rendering.frag");
+    glGenBuffers(1, &longVbo);
+    glGenVertexArrays(1, &longVao);
+    glBindVertexArray(longVao);
+    glBindBuffer(GL_ARRAY_BUFFER, longVbo);
+    {
+        GLuint attrib = glGetAttribLocation(textureProgram, "pos");
+        glVertexAttribPointer(attrib, 2, GL_FLOAT, false, 8, (void*)0);
+        glEnableVertexAttribArray(attrib);
+        float data[8] =
+        {
+            0, 0,
+            0, 1,
+            1, 1,
+            1, 0
+        };
+        glBufferData(GL_ARRAY_BUFFER, 8 * 4, data, GL_STATIC_DRAW);
+        glBindFragDataLocation(textureProgram, 0, "fragColor");
+
+    }
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
-
-    
+    longInstanceTime = 1;
+    longDraw(100);
+    {
+        uint8_t col[3];
+        glReadPixels(0, 0, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, col);
+        int64_t startTime = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch())
+            .count();
+        longDraw(1000000);
+        glReadPixels(0, 0, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, col);
+        int64_t endTime = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch())
+            .count();
+        longInstanceTime = (endTime - startTime) / 1000;
+    }
     err=glGetError();
     if(err)
         std::cerr << "Error init renderer" << gluErrorString(err) << std::endl;
@@ -62,9 +96,10 @@ void Renderer::useContext()
     SDL_GL_MakeCurrent(window, context);
 }
 
-void Renderer::beginDrawFrame()
+void Renderer::beginDrawFrame(GLsync sync)
 {
     SDL_GL_MakeCurrent(window, context);
+    glWaitSync(sync, 0, GL_TIMEOUT_IGNORED);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glViewport(0, 0, NATIVE_RES_X, NATIVE_RES_Y);
     glScissor(0, 0, NATIVE_RES_X, NATIVE_RES_Y);
@@ -131,6 +166,15 @@ void Renderer::textureRect(GLuint texture, int16_t x0, int16_t y0, int16_t x1, i
     int32_t err=glGetError();
     if(err)
         std::cerr << "Error texture rect " << gluErrorString(err) << std::endl;
+}
+
+void Renderer::longDraw(uint64_t microseconds)
+{
+    glScissor(0, 0, NATIVE_RES_X, NATIVE_RES_Y);
+    glUseProgram(longProgram);
+    glBindVertexArray(longVao);
+    glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, 4, static_cast<GLsizei>(microseconds / longInstanceTime));
+    glBindVertexArray(0);
 }
 
 GLuint Renderer::loadShaders(const char* vert, const char* frag)

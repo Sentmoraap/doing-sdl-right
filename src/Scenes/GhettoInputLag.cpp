@@ -6,14 +6,14 @@
 
 GhettoInputLag::GhettoInputLag()
 {
-    strcpy_s(name, sizeof(name), "Ghetto input lag");
+    strcpy(name, "Ghetto input lag");
 }
 
 void GhettoInputLag::displayImGuiSettings()
 {
     if(time == 0)
     {
-        ImGui::Text("%6d µs", lag);
+        ImGui::Text("%6d ï¿½s", lag);
     }
 }
 

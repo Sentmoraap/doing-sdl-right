@@ -83,7 +83,6 @@ int main(int argc, char **argv)
     static constexpr uint8_t  MAX_UPDATE_FRAMES = 10;
     static constexpr int AUTO_FRAME_DELAY_MARGIN = 1000;
     bool missedSync = true;
-    float frameDuration;
     int updateRate = 120;
     int simulatedUpdateTime = 0; // * 100µs
     int simulatedDrawTime = 0; // * 100µs
@@ -309,6 +308,7 @@ int main(int argc, char **argv)
                 break;
             }
             window.create();
+            SDL_SetWindowInputFocus(window.sdlWindow);
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplSDL2_NewFrame(window.sdlWindow);
             ImGui::NewFrame();
@@ -384,7 +384,7 @@ int main(int argc, char **argv)
             else nbFramesToUpdate = 1;
         }
         else nbFramesToUpdate = 0;
-        
+
         SDL_DisplayMode displayMode;
         SDL_GetWindowDisplayMode(window.sdlWindow, &displayMode);
         int64_t displayRefreshPeriod = 1000000 / displayMode.refresh_rate;
@@ -474,7 +474,6 @@ int main(int argc, char **argv)
                 break;
         }
         else missedSync = false;
-        frameDuration = static_cast<float>(afterSwapTime - startTime) / displayRefreshPeriod;
         iterationTimes[currentFrame] = afterSwapTime - updateStartTime;
     }
 }

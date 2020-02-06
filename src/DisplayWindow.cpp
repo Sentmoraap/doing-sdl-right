@@ -96,6 +96,9 @@ void DisplayWindow::create()
     if(SDL_GL_GetSwapInterval() != 1) canVSync = false;
 
     // Detect triple buffer
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    SDL_GL_SwapWindow(sdlWindow);
     glClearColor(0.1f, 0, 0, 0);
     glClear(GL_COLOR_BUFFER_BIT);
     SDL_GL_SwapWindow(sdlWindow);
@@ -107,7 +110,7 @@ void DisplayWindow::create()
     SDL_GL_SwapWindow(sdlWindow);
     uint8_t col[3];
     glReadPixels(0, 0, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, col);
-    tripleBuffer = col[0] > 0;
+    tripleBuffer = col[1] == 0;
     if(!isSyncModeAvailable(syncMode))
     {
         int i = 0;

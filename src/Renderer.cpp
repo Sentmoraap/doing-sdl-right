@@ -188,7 +188,7 @@ GLuint Renderer::loadShaders(const char* vert, const char* frag)
     FILE* f;
 
     // Load and compile the vertex shader
-    fopen_s(&f, vert, "rt");
+    f = fopen(vert, "rt");
     length=fread(buffer,1,16384,f);
     fclose(f);
     glShaderSource(vertexShader,1,&buf,&length);
@@ -197,7 +197,7 @@ GLuint Renderer::loadShaders(const char* vert, const char* frag)
     if(length) std::cout << "Vertex shader: " << buffer << std::endl;
 
     // Load and compile the fragment shader
-    fopen_s(&f, frag, "rt");
+    f = fopen(frag, "rt");
     length=fread(buffer,1,16384,f);
     fclose(f);
     glShaderSource(fragmentShader,1,&buf,&length);

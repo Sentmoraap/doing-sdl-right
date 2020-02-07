@@ -148,9 +148,7 @@ int main(int argc, char **argv)
     PixelArt pixelArt;
     Scrolling scrolling;
     renderer.useContext();
-    #ifndef _WINDOWS
-        pixelArt.init();
-    #endif
+    pixelArt.init();
     std::array<Scene*, 4> scenes {{&accurateInputLag, &ghettoInputLag, &pixelArt, &scrolling}};
     Scene *currentScene = scenes[0];
 

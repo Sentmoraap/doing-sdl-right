@@ -1,10 +1,7 @@
 #include "Renderer.hpp"
+#include "SDL2/SDL_image.h"
 #include <iostream>
 #include <chrono>
-
-#ifndef _WINDOWS
-#include "SDL2/SDL_image.h"
-#endif
 
 Renderer renderer;
 
@@ -114,7 +111,6 @@ void Renderer::endDrawFrame()
 
 GLuint Renderer::loadTexture(const char* path)
 {
-#ifndef _WINDOWS
     SDL_Surface *surface = IMG_Load(path);
     GLuint ret;
     glGenTextures(1, &ret);
@@ -125,9 +121,6 @@ GLuint Renderer::loadTexture(const char* path)
     glBindTexture(GL_TEXTURE_2D, 0);
     SDL_FreeSurface(surface);
     return ret;
-#else
-    return 0;
-#endif
 }
 
 void Renderer::rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)

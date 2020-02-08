@@ -38,10 +38,17 @@ public:
     bool tripleBuffer;
 
 private:
+    struct ProgramIds
+    {
+        GLuint program;
+        GLuint vao;
+    };
+
     SyncMode syncMode = SyncMode::noVSync;
     DisplayWindow::ScalingFilter scalingFilter = DisplayWindow::ScalingFilter::nearestNeighbour;
     SDL_GLContext context;
-    GLuint program, vbo, vao;
+    GLuint vbo, windowSizeUniform, nbIterationsUniform;
+    ProgramIds simpleProgram, pixelAverageProgram;
     bool canVSync, canNoVSync, canAdaptiveSync;
 
 public:

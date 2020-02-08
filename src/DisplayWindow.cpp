@@ -1,4 +1,5 @@
 #include <iostream>
+#include <algorithm>
 #include <SDL2/SDL_syswm.h>
 #include "DisplayWindow.hpp"
 #include "Renderer.hpp"
@@ -71,30 +72,41 @@ void DisplayWindow::create()
     SDL_GL_MakeCurrent(sdlWindow, context);
 
     // Init rendering
-    program = Renderer::loadShaders("assets/basic_texture.vert", "assets/basic_texture.frag");
-    glUseProgram(program);
-    glUniform1i(glGetUniformLocation(program, "tex"), 0);
     glGenBuffers(1, &vbo);
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     {
-        GLuint attrib = glGetAttribLocation(program ,"pos");
-        glVertexAttribPointer(attrib, 2, GL_FLOAT, false, 16, (void*)0);
-        glEnableVertexAttribArray(attrib);
-        attrib = glGetAttribLocation(program ,"textureCoord");
-        glVertexAttribPointer(attrib, 2, GL_FLOAT, false, 16, (void*)8);
-        glEnableVertexAttribArray(attrib);
-        glBindFragDataLocation(program, 0, "fragPass");
         float data[16] =
         {
             -1, -1, 0, 1,
             -1,  1, 0, 0,
-             1,  1, 1, 0,
-             1, -1, 1, 1
+            1,  1, 1, 0,
+            1, -1, 1, 1
         };
         glBufferData(GL_ARRAY_BUFFER, 16 * 4, data, GL_STATIC_DRAW);
     }
+    auto loadProgram = [this](ProgramIds &programIds, const char *vert, const char *frag)
+    {
+        programIds.program = Renderer::loadShaders(vert, frag);
+        glUseProgram(programIds.program);
+        glUniform1i(glGetUniformLocation(programIds.program, "tex"), 0);
+        glGenVertexArrays(1, &programIds.vao);
+        glBindVertexArray(programIds.vao);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        {
+            GLuint attrib = glGetAttribLocation(programIds.program, "pos");
+            glVertexAttribPointer(attrib, 2, GL_FLOAT, false, 16, (void*)0);
+            glEnableVertexAttribArray(attrib);
+            attrib = glGetAttribLocation(programIds.program, "textureCoord");
+            glVertexAttribPointer(attrib, 2, GL_FLOAT, false, 16, (void*)8);
+            glEnableVertexAttribArray(attrib);
+            glBindFragDataLocation(programIds.program, 0, "fragColor");
+        }
+    };
+    loadProgram(simpleProgram, "assets/basic_texture.vert", "assets/basic_texture.frag");
+    loadProgram(pixelAverageProgram, "assets/basic_texture.vert", "assets/pixel_coverage.frag");
+    glUniform2i(glGetUniformLocation(pixelAverageProgram.program, "sourceSize"), NATIVE_RES_X, NATIVE_RES_Y);
+    nbIterationsUniform = glGetUniformLocation(pixelAverageProgram.program, "nbIterations");
+    windowSizeUniform = glGetUniformLocation(pixelAverageProgram.program, "destSize");
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
     {
@@ -199,6 +211,7 @@ void DisplayWindow::setScalingFilter(ScalingFilter filter)
     switch(filter)
     {
         case nearestNeighbour:
+        case pixelAverage:
             glBindTexture(GL_TEXTURE_2D, renderer.texture);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -223,11 +236,29 @@ void DisplayWindow::draw()
     glClear(GL_COLOR_BUFFER_BIT);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, renderer.texture);
-    glUseProgram(program);
-    glBindVertexArray(vao);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    switch(scalingFilter)
+    {
+        case nearestNeighbour:
+        case bilinear:
+            glUseProgram(simpleProgram.program);
+            glBindVertexArray(simpleProgram.vao);
+            break;
+        case pixelAverage:
+        {
+            int sizeX, sizeY;
+            glUseProgram(pixelAverageProgram.program);
+            glBindVertexArray(pixelAverageProgram.vao);
+            SDL_GetWindowSize(sdlWindow, &sizeX, &sizeY);
+            glUniform2i(windowSizeUniform, sizeX, sizeY);
+            int nbIterations = 2;
+            glUniform1i(nbIterationsUniform, std::max({2, 2 + NATIVE_RES_X / sizeX, 2 + NATIVE_RES_Y / sizeY}));
+            break;
+        }
+        default:
+            // Not implemented
+            break;
+    }
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
     glBindTexture(GL_TEXTURE_2D, 0);
     GLuint err = glGetError();

@@ -14,6 +14,7 @@ void Renderer::init()
     glewInit();
     int32_t err=glGetError();
     //SDL_DestroyWindow(window);
+    glEnable(GL_FRAMEBUFFER_SRGB);
     glEnable(GL_SCISSOR_TEST);
 
     // FBO
@@ -23,7 +24,7 @@ void Renderer::init()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
     glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, NATIVE_RES_X, NATIVE_RES_Y, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8, NATIVE_RES_X, NATIVE_RES_Y, 0, GL_RGB, GL_UNSIGNED_BYTE, nullptr);
     glGenFramebuffers(1, &fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
@@ -104,7 +105,7 @@ GLuint Renderer::loadTexture(const char* path)
     glBindTexture(GL_TEXTURE_2D, ret);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, surface->w, surface->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, surface->pixels);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, surface->w, surface->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, surface->pixels);
     glBindTexture(GL_TEXTURE_2D, 0);
     SDL_FreeSurface(surface);
     return ret;

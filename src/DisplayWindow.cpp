@@ -72,6 +72,7 @@ void DisplayWindow::create()
     SDL_GL_MakeCurrent(sdlWindow, context);
 
     // Init rendering
+    glEnable(GL_FRAMEBUFFER_SRGB);
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     {

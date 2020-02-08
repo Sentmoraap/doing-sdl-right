@@ -23,15 +23,6 @@
 #undef main
 #endif
 
-enum ScalingFilter : int8_t
-{
-    nearestNeighbour,
-    bilinear,
-    pixelAverage,
-    catmullRom,
-    lanczos3
-};
-
 enum InputLagMitigation : int8_t
 {
     none,
@@ -85,31 +76,14 @@ int main(int argc, char **argv)
     bool missedSync = true;
     int updateRate = 120;
     int simulatedUpdateTime = 0; // * 100µs
-    int simulatedDrawTime = 0; // * 100µs
+    int simulatedDrawTime = 0; // Arbitrary units
     int sizeX = NATIVE_RES_X, sizeY = NATIVE_RES_Y, posX, posY;
-    ScalingFilter scalingFilter = ScalingFilter::nearestNeighbour;
     InputLagMitigation inputLagMitigation = InputLagMitigation::none;
 
 #ifdef _WINDOWS
     //SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     SetProcessDPIAware();
 #endif
-
-    char syncModeNames[DisplayWindow::SyncMode::vSync + 1][40] =
-    {
-        "Off",
-        "Adaptive",
-        "On",
-    };
-
-    char scalingFilterNames[ScalingFilter::lanczos3 + 1][40] =
-    {
-        "Nearest neighbour",
-        "Bilinear",
-        "Pixel average",
-        "Catmull-Rom",
-        "Lanczos-3"
-    };
 
     char inputLagMitigationNames[InputLagMitigation::frameDelay + 1][40] =
     {
@@ -224,7 +198,7 @@ int main(int argc, char **argv)
         ImGui::Text("Simulated times");
         ImGui::DragInt("Update rate (Hz)", &updateRate, 0.25, 1, 300);
         ImGui::DragInt("Update time *100 µs", &simulatedUpdateTime, 0.25, 0, 1000);
-        ImGui::DragInt("Draw time *100 µs", &simulatedDrawTime, 0.25, 0, 1000);
+        ImGui::DragInt("Draw time (arbitrary units)", &simulatedDrawTime, 0.25, 0, 1000);
         ImGui::Separator();
         ImGui::Text("Settings");
         int nbDisplays = SDL_GetNumVideoDisplays();
@@ -325,37 +299,19 @@ int main(int argc, char **argv)
         ImGui::DragInt("Size X", &sizeX, 0.25, 1, NATIVE_RES_X * 10);
         ImGui::DragInt("Size Y", &sizeY, 0.25, 1, NATIVE_RES_Y * 10);
         if(window.windowMode == DisplayWindow::WindowMode::windowed) SDL_SetWindowSize(window.sdlWindow, sizeX, sizeY);
-        ScalingFilter oldScalingFilter = scalingFilter;
-        enumCombo("Scaling filter", scalingFilterNames, reinterpret_cast<int8_t&>(scalingFilter),
-            ScalingFilter::lanczos3);
-        if(oldScalingFilter != scalingFilter)
-        {
-            switch(scalingFilter)
-            {
-                case nearestNeighbour:
-                    glBindTexture(GL_TEXTURE_2D, renderer.texture);
-                    glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-                    glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-                    glBindTexture(GL_TEXTURE_2D, 0);
-                    break;
-                case bilinear:
-                    glBindTexture(GL_TEXTURE_2D, renderer.texture);
-                    glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                    glTexParameteri(GL_TEXTURE_2D,  GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                    glBindTexture(GL_TEXTURE_2D, 0);
-                    break;
-                default:
-                    // Not implemented
-                    break;
-            }
-        }
+        DisplayWindow::ScalingFilter oldScalingFilter = window.getScalingFilter(), newScalingFilter = oldScalingFilter;
+
+        enumCombo("Scaling filter", DisplayWindow::scalingFilterNames, reinterpret_cast<int8_t&>(newScalingFilter),
+            DisplayWindow::ScalingFilter::lanczos3);
+        if(oldScalingFilter != newScalingFilter) window.setScalingFilter(newScalingFilter);
+        
         if(window.tripleBuffer) ImGui::Text("Triple buffer detected. This program may not behave as intended.");
         DisplayWindow::SyncMode syncMode = window.getSyncMode();
-        if(ImGui::BeginCombo("V-Sync", syncModeNames[syncMode], 0))
+        if(ImGui::BeginCombo("V-Sync", DisplayWindow::syncModeNames[syncMode], 0))
         {
             for(int i = 0; i <= DisplayWindow::SyncMode::vSync; i++)
                     if(window.isSyncModeAvailable(static_cast<DisplayWindow::SyncMode>(i))
-                            && ImGui::Selectable(syncModeNames[i], i == syncMode))
+                            && ImGui::Selectable(DisplayWindow::syncModeNames[i], i == syncMode))
                                     window.setSyncMode(static_cast<DisplayWindow::SyncMode>(i));
             ImGui::EndCombo();
         }
@@ -409,7 +365,7 @@ int main(int argc, char **argv)
         int64_t startDrawTime = getTimeMicroseconds();
         GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         renderer.beginDrawFrame(sync);
-        renderer.longDraw(simulatedDrawTime * 100);
+        renderer.longDraw(simulatedDrawTime);
         currentScene->draw();
         renderer.endDrawFrame();
         sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
@@ -434,21 +390,8 @@ int main(int argc, char **argv)
             glViewport(posX, -posY + wY - sizeY, sizeX, sizeY);
             glScissor(posX, -posY + wY - sizeY, sizeX, sizeY);
         }
-        glClearColor(0, 0, 0, 0);
-        glClear(GL_COLOR_BUFFER_BIT);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, renderer.texture);
-        glUseProgram(window.program);
-        glBindVertexArray(window.vao);
-        glBindBuffer(GL_ARRAY_BUFFER, window.vbo);
-        glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-        glBindVertexArray(0);
-        glBindTexture(GL_TEXTURE_2D, 0);
-        err=glGetError();
-        if(err)
-            std::cerr << "Error window render " << gluErrorString(err) << std::endl;
-
+        window.draw();
+ 
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         int64_t drawTime = getTimeMicroseconds() - startDrawTime;
         //if(drawTime < simulatedDrawTime * 100) drawTime = simulatedDrawTime * 100;

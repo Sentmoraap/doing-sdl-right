@@ -14,7 +14,6 @@ class Renderer
         SDL_Window *window;
         GLuint textureProgram, textureVbo, textureVao;
         GLuint longProgram, longVbo, longVao;
-        uint64_t longInstanceTime; // nanoseconds
 
     public:
         GLuint texture;
@@ -26,7 +25,7 @@ class Renderer
         GLuint loadTexture(const char* path);
         void rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
         void textureRect(GLuint texture, int16_t x0, int16_t y0, int16_t x1, int16_t y1);
-        void longDraw(uint64_t microseconds);
+        void longDraw(uint16_t instances);
         static GLuint loadShaders(const char* vert, const char* frag);
 };
 

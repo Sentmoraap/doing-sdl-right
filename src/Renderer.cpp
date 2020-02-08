@@ -70,19 +70,6 @@ void Renderer::init()
     }
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
-    longInstanceTime = 1;
-    longDraw(100);
-    {
-        uint8_t col[3];
-        glReadPixels(0, 0, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, col);
-        int64_t startTime = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch())
-            .count();
-        longDraw(1000000);
-        glReadPixels(0, 0, 1, 1, GL_RGB, GL_UNSIGNED_BYTE, col);
-        int64_t endTime = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch())
-            .count();
-        longInstanceTime = (endTime - startTime) / 1000;
-    }
     err=glGetError();
     if(err)
         std::cerr << "Error init renderer" << gluErrorString(err) << std::endl;
@@ -161,12 +148,12 @@ void Renderer::textureRect(GLuint texture, int16_t x0, int16_t y0, int16_t x1, i
         std::cerr << "Error texture rect " << gluErrorString(err) << std::endl;
 }
 
-void Renderer::longDraw(uint64_t microseconds)
+void Renderer::longDraw(uint16_t instances)
 {
     glScissor(0, 0, NATIVE_RES_X, NATIVE_RES_Y);
     glUseProgram(longProgram);
     glBindVertexArray(longVao);
-    glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, 4, static_cast<GLsizei>(microseconds / longInstanceTime));
+    glDrawArraysInstanced(GL_TRIANGLE_FAN, 0, 4, instances);
     glBindVertexArray(0);
 }
 

@@ -13,11 +13,9 @@ void GhettoInputLag::displayImGuiSettings()
 {
     if(time == 0)
     {
-        ImGui::Text("%6d �s", lag);
+        ImGui::Text("%6d µs", lag);
     }
 }
-
-#include <iostream>
 
 void GhettoInputLag::update(uint16_t frameRate)
 {

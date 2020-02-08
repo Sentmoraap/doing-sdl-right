@@ -13,6 +13,22 @@ const char DisplayWindow::windowModeNames[WindowMode::fullscreen + 1][18] =
     "Fullscreen"
 };
 
+const char DisplayWindow::syncModeNames[DisplayWindow::SyncMode::vSync + 1][40] =
+{
+    "Off",
+    "Adaptive",
+    "On",
+};
+
+const char DisplayWindow::scalingFilterNames[DisplayWindow::ScalingFilter::lanczos3 + 1][40] =
+{
+    "Nearest neighbour",
+    "Bilinear",
+    "Pixel average",
+    "Catmull-Rom",
+    "Lanczos-3"
+};
+
 void DisplayWindow::create()
 {
     int flags = SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI;
@@ -147,7 +163,7 @@ bool DisplayWindow::isSyncModeAvailable(SyncMode syncMode)
     }
 }
 
-DisplayWindow::SyncMode DisplayWindow::getSyncMode()
+DisplayWindow::SyncMode DisplayWindow::getSyncMode() const
 {
     return syncMode;
 }
@@ -171,6 +187,52 @@ void DisplayWindow::setSyncMode(SyncMode syncMode)
             break;
     }
     SDL_GL_SetSwapInterval(swapInterval);
+}
+
+DisplayWindow::ScalingFilter DisplayWindow::getScalingFilter() const
+{
+    return scalingFilter;
+}
+
+void DisplayWindow::setScalingFilter(ScalingFilter filter)
+{
+    switch(filter)
+    {
+        case nearestNeighbour:
+            glBindTexture(GL_TEXTURE_2D, renderer.texture);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            break;
+        case bilinear:
+            glBindTexture(GL_TEXTURE_2D, renderer.texture);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            break;
+        default:
+            // Not implemented
+            break;
+    }
+    scalingFilter = filter;
+}
+
+void DisplayWindow::draw()
+{
+    glClearColor(0, 0, 0, 0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, renderer.texture);
+    glUseProgram(program);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    GLuint err = glGetError();
+    if(err)
+        std::cerr << "Error window render " << gluErrorString(err) << std::endl;
 }
 
 void DisplayWindow::swap()

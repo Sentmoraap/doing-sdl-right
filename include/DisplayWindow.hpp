@@ -48,7 +48,7 @@ private:
     DisplayWindow::ScalingFilter scalingFilter = DisplayWindow::ScalingFilter::nearestNeighbour;
     SDL_GLContext context;
     GLuint vbo, windowSizeUniform, nbIterationsUniform;
-    ProgramIds simpleProgram, pixelAverageProgram, bicubicProgram;
+    ProgramIds simpleProgram, pixelAverageProgram, bicubicProgram, lanczos3Program;
     bool canVSync, canNoVSync, canAdaptiveSync;
 
 public:

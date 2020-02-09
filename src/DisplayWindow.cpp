@@ -110,6 +110,8 @@ void DisplayWindow::create()
     windowSizeUniform = glGetUniformLocation(pixelAverageProgram.program, "destSize");
     loadProgram(bicubicProgram, "assets/basic_texture.vert", "assets/bicubic.frag");
     glUniform2i(glGetUniformLocation(bicubicProgram.program, "sourceSize"), NATIVE_RES_X, NATIVE_RES_Y);
+    loadProgram(lanczos3Program, "assets/basic_texture.vert", "assets/lanczos3.frag");
+    glUniform2i(glGetUniformLocation(lanczos3Program.program, "sourceSize"), NATIVE_RES_X, NATIVE_RES_Y);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
@@ -217,6 +219,7 @@ void DisplayWindow::setScalingFilter(ScalingFilter filter)
         case nearestNeighbour:
         case pixelAverage:
         case catmullRom:
+        case lanczos3:
             glBindTexture(GL_TEXTURE_2D, renderer.texture);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -227,9 +230,6 @@ void DisplayWindow::setScalingFilter(ScalingFilter filter)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
             glBindTexture(GL_TEXTURE_2D, 0);
-            break;
-        default:
-            // Not implemented
             break;
     }
     scalingFilter = filter;
@@ -263,8 +263,9 @@ void DisplayWindow::draw()
             glUseProgram(bicubicProgram.program);
             glBindVertexArray(bicubicProgram.vao);
             break;
-        default:
-            // Not implemented
+        case lanczos3:
+            glUseProgram(lanczos3Program.program);
+            glBindVertexArray(lanczos3Program.vao);
             break;
     }
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);

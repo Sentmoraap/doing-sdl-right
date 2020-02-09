@@ -108,6 +108,9 @@ void DisplayWindow::create()
     glUniform2i(glGetUniformLocation(pixelAverageProgram.program, "sourceSize"), NATIVE_RES_X, NATIVE_RES_Y);
     nbIterationsUniform = glGetUniformLocation(pixelAverageProgram.program, "nbIterations");
     windowSizeUniform = glGetUniformLocation(pixelAverageProgram.program, "destSize");
+    loadProgram(bicubicProgram, "assets/basic_texture.vert", "assets/bicubic.frag");
+    glUniform2i(glGetUniformLocation(bicubicProgram.program, "sourceSize"), NATIVE_RES_X, NATIVE_RES_Y);
+
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
     {
@@ -213,6 +216,7 @@ void DisplayWindow::setScalingFilter(ScalingFilter filter)
     {
         case nearestNeighbour:
         case pixelAverage:
+        case catmullRom:
             glBindTexture(GL_TEXTURE_2D, renderer.texture);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -255,6 +259,10 @@ void DisplayWindow::draw()
             glUniform1i(nbIterationsUniform, std::max({2, 2 + NATIVE_RES_X / sizeX, 2 + NATIVE_RES_Y / sizeY}));
             break;
         }
+        case catmullRom:
+            glUseProgram(bicubicProgram.program);
+            glBindVertexArray(bicubicProgram.vao);
+            break;
         default:
             // Not implemented
             break;

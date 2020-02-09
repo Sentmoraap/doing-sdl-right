@@ -21,10 +21,9 @@ public:
 
     enum ScalingFilter : int8_t
     {
-        nearestNeighbour,
         bilinear,
         pixelAverage,
-        catmullRom,
+        bicubic,
         lanczos3
     };
 
@@ -35,6 +34,7 @@ public:
     WindowMode windowMode = WindowMode::windowed;
     SDL_Window *sdlWindow;
     int fullscreenDisplay = 0, displayMode = 0;
+    int sharpness = 100; // / 100
     bool tripleBuffer;
 
 private:
@@ -45,10 +45,10 @@ private:
     };
 
     SyncMode syncMode = SyncMode::noVSync;
-    DisplayWindow::ScalingFilter scalingFilter = DisplayWindow::ScalingFilter::nearestNeighbour;
+    DisplayWindow::ScalingFilter scalingFilter = DisplayWindow::ScalingFilter::bilinear;
     SDL_GLContext context;
-    GLuint vbo, windowSizeUniform, nbIterationsUniform;
-    ProgramIds simpleProgram, pixelAverageProgram, bicubicProgram, lanczos3Program;
+    GLuint vbo, blurynessUniform, windowSizeUniform, bcUniform, nbIterationsUniform, coverageMultUniform;
+    ProgramIds bilinearProgram, pixelAverageProgram, bicubicProgram, lanczos3Program;
     bool canVSync, canNoVSync, canAdaptiveSync;
 
 public:

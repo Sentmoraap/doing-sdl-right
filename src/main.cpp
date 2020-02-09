@@ -305,6 +305,8 @@ int main(int argc, char **argv)
         enumCombo("Scaling filter", DisplayWindow::scalingFilterNames, reinterpret_cast<int8_t&>(newScalingFilter),
             DisplayWindow::ScalingFilter::lanczos3);
         if(oldScalingFilter != newScalingFilter) window.setScalingFilter(newScalingFilter);
+        ImGui::DragInt("Sharpness", &window.sharpness, 0.25, 0, 100);
+
         
         if(window.tripleBuffer) ImGui::Text("Triple buffer detected. This program may not behave as intended.");
         DisplayWindow::SyncMode syncMode = window.getSyncMode();

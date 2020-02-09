@@ -23,10 +23,9 @@ const char DisplayWindow::syncModeNames[DisplayWindow::SyncMode::vSync + 1][40] 
 
 const char DisplayWindow::scalingFilterNames[DisplayWindow::ScalingFilter::lanczos3 + 1][40] =
 {
-    "Nearest neighbour",
     "Bilinear",
     "Pixel average",
-    "Catmull-Rom",
+    "Bicubic",
     "Lanczos-3"
 };
 
@@ -103,15 +102,20 @@ void DisplayWindow::create()
             glBindFragDataLocation(programIds.program, 0, "fragColor");
         }
     };
-    loadProgram(simpleProgram, "assets/basic_texture.vert", "assets/basic_texture.frag");
+    loadProgram(bilinearProgram, "assets/basic_texture.vert", "assets/tunable_bilinear.frag");
+    glUniform2i(glGetUniformLocation(bilinearProgram.program, "sourceSize"), NATIVE_RES_X, NATIVE_RES_Y);
+    blurynessUniform = glGetUniformLocation(bilinearProgram.program, "bluryness");
     loadProgram(pixelAverageProgram, "assets/basic_texture.vert", "assets/pixel_coverage.frag");
     glUniform2i(glGetUniformLocation(pixelAverageProgram.program, "sourceSize"), NATIVE_RES_X, NATIVE_RES_Y);
     nbIterationsUniform = glGetUniformLocation(pixelAverageProgram.program, "nbIterations");
     windowSizeUniform = glGetUniformLocation(pixelAverageProgram.program, "destSize");
+    coverageMultUniform = glGetUniformLocation(pixelAverageProgram.program, "coverageMult");
     loadProgram(bicubicProgram, "assets/basic_texture.vert", "assets/bicubic.frag");
     glUniform2i(glGetUniformLocation(bicubicProgram.program, "sourceSize"), NATIVE_RES_X, NATIVE_RES_Y);
+    bcUniform = glGetUniformLocation(bicubicProgram.program, "bc");
     loadProgram(lanczos3Program, "assets/basic_texture.vert", "assets/lanczos3.frag");
     glUniform2i(glGetUniformLocation(lanczos3Program.program, "sourceSize"), NATIVE_RES_X, NATIVE_RES_Y);
+    setScalingFilter(bilinear);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
@@ -216,9 +220,8 @@ void DisplayWindow::setScalingFilter(ScalingFilter filter)
 {
     switch(filter)
     {
-        case nearestNeighbour:
         case pixelAverage:
-        case catmullRom:
+        case bicubic:
         case lanczos3:
             glBindTexture(GL_TEXTURE_2D, renderer.texture);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -243,10 +246,10 @@ void DisplayWindow::draw()
     glBindTexture(GL_TEXTURE_2D, renderer.texture);
     switch(scalingFilter)
     {
-        case nearestNeighbour:
         case bilinear:
-            glUseProgram(simpleProgram.program);
-            glBindVertexArray(simpleProgram.vao);
+            glUseProgram(bilinearProgram.program);
+            glBindVertexArray(bilinearProgram.vao);
+            glUniform1f(blurynessUniform, 1.f - sharpness * 0.01f);
             break;
         case pixelAverage:
         {
@@ -255,13 +258,17 @@ void DisplayWindow::draw()
             glBindVertexArray(pixelAverageProgram.vao);
             SDL_GetWindowSize(sdlWindow, &sizeX, &sizeY);
             glUniform2i(windowSizeUniform, sizeX, sizeY);
-            int nbIterations = 2;
-            glUniform1i(nbIterationsUniform, std::max({2, 2 + NATIVE_RES_X / sizeX, 2 + NATIVE_RES_Y / sizeY}));
+            float mult = sharpness == 100 ? 1000000 : 0.5f / (1 - sharpness * 0.01f);
+            glUniform1f(coverageMultUniform, mult);
+            glUniform1i(nbIterationsUniform, std::max({2,
+                    2 + NATIVE_RES_X / static_cast<int>(sizeX * mult),
+                    2 + NATIVE_RES_Y / static_cast<int>(sizeY * mult)}));
             break;
         }
-        case catmullRom:
+        case bicubic:
             glUseProgram(bicubicProgram.program);
             glBindVertexArray(bicubicProgram.vao);
+            glUniform2f(bcUniform, 1.f - sharpness * 0.01f, sharpness * 0.005f);
             break;
         case lanczos3:
             glUseProgram(lanczos3Program.program);

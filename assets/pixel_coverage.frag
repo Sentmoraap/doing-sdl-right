@@ -6,6 +6,7 @@ uniform sampler2D tex;
 uniform ivec2 destSize;
 uniform ivec2 sourceSize;
 uniform int nbIterations;
+uniform float coverageMult;
 
 noperspective in vec2 texCoord;
 
@@ -13,7 +14,7 @@ out vec3 fragColor;
 
 void main()
 {
-	vec2 pixelCoverage = destSize / vec2(sourceSize);
+	vec2 pixelCoverage = coverageMult * destSize / vec2(sourceSize);
     fragColor = vec3(0, 0, 0);
     vec2 pixelCoords = texCoord * sourceSize;
     pixelCoords -= 0.5 / pixelCoverage;

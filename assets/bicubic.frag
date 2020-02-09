@@ -2,14 +2,13 @@
 
 uniform sampler2D tex;
 uniform ivec2 sourceSize;
-//uniform vec2 bc;
+uniform vec2 bc;
 noperspective in vec2 texCoord;
 
 out vec3 fragColor;
 
 void main()
 {
-	vec2 bc = vec2(0, 0.5);
 	vec2 pixel = texCoord * sourceSize + 0.5;
 	vec2 frac = fract(pixel);
 	vec2 frac2 = frac * frac;

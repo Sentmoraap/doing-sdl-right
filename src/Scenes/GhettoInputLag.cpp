@@ -10,44 +10,48 @@ GhettoInputLag::GhettoInputLag()
 
 void GhettoInputLag::displayImGuiSettings()
 {
-    if(time == 0)
+    if(cur.time == 0)
     {
-        ImGui::Text("%6d µs", lag);
+        ImGui::Text("%6d µs", cur.lag);
     }
 }
 
-void GhettoInputLag::update(uint64_t microseconds, Inputs::State state)
+void GhettoInputLag::update(uint64_t microseconds, Inputs::State inputs)
 {
-    /*beatTime = frameRate * 3 / 4;
-
-    bool input = false;
-    int nbKeys;
-    const Uint8* keys = SDL_GetKeyboardState(&nbKeys);
-    for(int i = 0; i < nbKeys; i++) if(keys[i]) input = true;
-    input |= joysticks.isAnyInputPressed();
-
-    if(time == 0)
+    if(cur.time == 0)
     {
-        if(input && !prevInput) time = beatTime * (NB_BEATS + 1);
+        if(inputs.pressed && !cur.prevInput) cur.time = BEAT_TIME * (NB_BEATS + 2);
+        cur.beat = 0;
     }
     else
     {
-        if(input && !prevInput && beat < NB_BEATS)
+        if(inputs.pressed && !cur.prevInput && cur.beat < NB_BEATS)
         {
-            int16_t diff = beatTime * (NB_BEATS - beat) - time;
-            diffs[beat] = diff;
-            beat++;
+            int64_t diff = BEAT_TIME * (NB_BEATS - cur.beat) - cur.time;
+            cur.diffs[cur.beat++] = diff;
         }
-        time--;
-        if(time == 0)
+        if(cur.time <= microseconds)
         {
-            std::sort(diffs.begin(), diffs.end());
-            int16_t total = 0;
-            for(uint8_t i = NB_BEATS / 2 - SPREAD; i <= NB_BEATS / 2 + SPREAD; i++) total += diffs[i];
-            lag = total * 1000000 / (frameRate * (2 * SPREAD + 1));
+            cur.time = 0;
+            std::sort(cur.diffs.begin(), cur.diffs.end());
+            int64_t total = 0;
+            for(uint8_t i = NB_BEATS / 2 - SPREAD; i <= NB_BEATS / 2 + SPREAD; i++) total += cur.diffs[i];
+            cur.lag = static_cast<int32_t>(total / (2 * SPREAD + 1));
+
         }
+        else cur.time -= microseconds;
     }
-    prevInput = input;*/
+    cur.prevInput = inputs.pressed;
+}
+
+void GhettoInputLag::saveState()
+{
+    saved = cur;
+}
+
+void GhettoInputLag::loadState()
+{
+    cur = saved;
 }
 
 void GhettoInputLag::draw()
@@ -55,9 +59,10 @@ void GhettoInputLag::draw()
     renderer.rect(100, 354, 100, 416);
     renderer.rect(99, 322, 101, 353);
     renderer.rect(99, 417, 101, 448);
-    if(time) for(uint8_t i = 0; i < NB_BEATS; i++)
+    if(cur.time) for(uint8_t i = 0; i < NB_BEATS; i++)
     {
-        uint16_t posX = 100 + (time - beatTime * (NB_BEATS - i)) * BEAT_SPEED / beatTime;
+        int16_t posX = static_cast<int16_t>(100 + (static_cast<int64_t>(cur.time)
+                - static_cast<int64_t>(BEAT_TIME * (NB_BEATS - i))) * BEAT_SPEED / static_cast<int64_t>(BEAT_TIME));
         renderer.rect(posX, 354, posX, 416);
     }
 }

@@ -149,6 +149,7 @@ int main(int argc, char **argv)
     int64_t uSeconds = getTimeMicroseconds();
     int64_t prevUseconds = uSeconds;
     int64_t toUpdate = 0;
+    int64_t addToUpdate = 0;
     uint8_t currentFrameUpdate = 0, currentFrameDraw = 0;
     int64_t waitTime;
     std::array<int64_t, 16> frameTimes;
@@ -348,7 +349,8 @@ int main(int argc, char **argv)
 
         // Update
         uSeconds = startTime;// getTimeMicroseconds();
-        toUpdate += (uSeconds - prevUseconds) * updateRate;
+        int64_t dToUpdate = (uSeconds - prevUseconds) * updateRate;
+        toUpdate += dToUpdate;
         prevUseconds = uSeconds;
 
         if(toUpdate > 1000000 * MAX_UPDATE_FRAMES) toUpdate = 1000000 * MAX_UPDATE_FRAMES;
@@ -365,12 +367,10 @@ int main(int argc, char **argv)
         switch(timestep)
         {
             case Timestep::fixed:
-                currentScene->loadState();
                 if(toUpdate > -1000000 * UPDATE_TIMING_WINDOW) do
                 {
                     int64_t frameTime = getTimeMicroseconds();
-                    currentScene->update(1000000 / updateRate, useSavedInputs ? savedInputs : inputs.getState());
-                    useSavedInputs = false;
+                    currentScene->update(1000000 / updateRate, inputs.getState());
                     frameTime = getTimeMicroseconds() - frameTime;
                     if(frameTime < simulatedUpdateTime * 100) frameTime = simulatedUpdateTime * 100;
                     singleFrameTimes[currentFrameUpdate] = frameTime;
@@ -404,6 +404,42 @@ int main(int argc, char **argv)
                     }
                     currentScene->update(toUpdate / updateRate, savedInputs);
                     nbFramesToUpdate++;
+                }
+                break;
+            case Timestep::loose:
+                currentScene->loadState();
+                while(toUpdate > 1000000)
+                {
+                    int64_t frameTime = getTimeMicroseconds();
+                    currentScene->update((1000000 + addToUpdate) / updateRate, useSavedInputs ? savedInputs : inputs.getState());
+                    useSavedInputs = false;
+                    addToUpdate = 0;
+                    frameTime = getTimeMicroseconds() - frameTime;
+                    if(frameTime < simulatedUpdateTime * 100) frameTime = simulatedUpdateTime * 100;
+                    singleFrameTimes[currentFrameUpdate] = frameTime;
+                    ++currentFrameUpdate %= singleFrameTimes.size();
+                    toUpdate -= 1000000;
+                    nbFramesToUpdate++;
+                }
+                currentScene->saveState();
+                if(addToUpdate > 0 || toUpdate + dToUpdate < 1000000)
+                {
+                    if(!useSavedInputs)
+                    {
+                        savedInputs = inputs.getState();
+                        useSavedInputs = true;
+                    }
+                    currentScene->update((toUpdate + addToUpdate) / updateRate, savedInputs);
+                    nbFramesToUpdate++;
+                }
+                else if(toUpdate > 0)
+                {
+                    currentScene->update(toUpdate / updateRate, useSavedInputs ? savedInputs : inputs.getState());
+                    useSavedInputs = false;
+                    addToUpdate = 1000000 - toUpdate;
+                    toUpdate -= 1000000;
+                    nbFramesToUpdate++;
+                    currentScene->saveState();
                 }
                 break;
         }

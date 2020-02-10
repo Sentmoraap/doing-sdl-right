@@ -1,8 +1,7 @@
-#include "Joysticks.hpp"
+#include "Inputs.hpp"
+#include <tuple>
 
-Joysticks joysticks;
-
-void Joysticks::init()
+void Inputs::init()
 {
     int nbJoysticks = SDL_NumJoysticks();
     for(int iJs = 0; iJs < nbJoysticks; iJs++)
@@ -12,8 +11,18 @@ void Joysticks::init()
     }
 }
 
-bool Joysticks::isAnyInputPressed() const
+Inputs::State Inputs::getState()
 {
+    SDL_PumpEvents();
+    State ret;
+    ret.pressed = isAnyInputPressed();
+    std::tie(ret.x, ret.y) = getXY();
+    return ret;
+}
+
+bool Inputs::isAnyInputPressed() const
+{
+    // Joystick
     for(SDL_Joystick *js : joysticks)
     {
         int n = SDL_JoystickNumHats(js);
@@ -21,12 +30,20 @@ bool Joysticks::isAnyInputPressed() const
         n = SDL_JoystickNumButtons(js);
         for(int iBtn = 0; iBtn < n; iBtn++) if(SDL_JoystickGetButton(js, iBtn)) return true;
     }
+
+    // Keyboard
+    int nbKeys;
+    const Uint8* keys = SDL_GetKeyboardState(&nbKeys);
+    for(int i = 0; i < nbKeys; i++) if(keys[i]) return true;
+    
     return false;
 }
 
-std::pair<int16_t, int16_t> Joysticks::getXY() const
+std::pair<int16_t, int16_t> Inputs::getXY() const
 {
     int x = 0, y = 0;
+
+    // Joystick
     for(SDL_Joystick *js : joysticks)
     {
         if(SDL_JoystickNumHats(js))
@@ -80,5 +97,15 @@ std::pair<int16_t, int16_t> Joysticks::getXY() const
     }
     if(x < -32767) x = -32767; else if(x > 32767) x = 32767;
     if(y < -32767) y = -32767; else if(y > 32767) y = 32767;
+
+    // Keyboard
+    const Uint8* keys = SDL_GetKeyboardState(nullptr);
+    if(keys[SDL_SCANCODE_LEFT])  x -= 32767;
+    if(keys[SDL_SCANCODE_RIGHT]) x += 32767;
+    if(keys[SDL_SCANCODE_UP])    y -= 32767;
+    if(keys[SDL_SCANCODE_DOWN])  y += 32767;
+    if(x < -32767) x = -32767; else if(x > 32767) x = 32767;
+    if(y < -32767) y = -32767; else if(y > 32767) y = 32767;
+
     return std::make_pair(x, y);
 }

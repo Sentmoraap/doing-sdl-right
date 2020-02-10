@@ -10,7 +10,7 @@
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_sdl.h"
 #include "imgui/imgui_impl_opengl3.h"
-#include "Joysticks.hpp"
+#include "Inputs.hpp"
 #include "Renderer.hpp"
 #include "DisplayWindow.hpp"
 #include "Scenes/Scene.hpp"
@@ -28,6 +28,13 @@ enum InputLagMitigation : int8_t
     none,
     gpuSync,
     frameDelay
+};
+
+enum Timestep : int8_t
+{
+    fixed,
+    interpolation,
+    loose
 };
 
 int64_t getTimeMicroseconds()
@@ -79,6 +86,7 @@ int main(int argc, char **argv)
     int simulatedDrawTime = 0; // Arbitrary units
     int sizeX = NATIVE_RES_X, sizeY = NATIVE_RES_Y, posX, posY;
     InputLagMitigation inputLagMitigation = InputLagMitigation::none;
+    Timestep timestep = Timestep::fixed;
 
 #ifdef _WINDOWS
     //SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -89,7 +97,14 @@ int main(int argc, char **argv)
     {
         "None",
         "GPU hard sync",
-        "GPU hard sync + predictive waiting"
+        "Predictive waiting"
+    };
+
+    char timestepNames[Timestep::loose + 1][40] =
+    {
+        "Fixed",
+        "Interpolation",
+        "Loose"
     };
 
     // Init SDL
@@ -110,8 +125,11 @@ int main(int argc, char **argv)
     renderer.init();
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);
 
-    // Init joysticks
-    joysticks.init();
+    // Init Inputs
+    Inputs inputs;
+    bool useSavedInputs = false;
+    Inputs::State savedInputs;
+    inputs.init();
 
     // Init window and it's context
     DisplayWindow window;
@@ -196,8 +214,9 @@ int main(int argc, char **argv)
         }
         currentScene->displayImGuiSettings();
         ImGui::Separator();
-        ImGui::Text("Simulated times");
+        ImGui::Text("Game loop");
         ImGui::DragInt("Update rate (Hz)", &updateRate, 0.25, 1, 300);
+        enumCombo("Timestep", timestepNames, reinterpret_cast<int8_t&>(timestep), Timestep::loose);
         ImGui::DragInt("Update time *100 µs", &simulatedUpdateTime, 0.25, 0, 1000);
         ImGui::DragInt("Draw time (arbitrary units)", &simulatedDrawTime, 0.25, 0, 1000);
         ImGui::Separator();
@@ -333,14 +352,7 @@ int main(int argc, char **argv)
         prevUseconds = uSeconds;
 
         if(toUpdate > 1000000 * MAX_UPDATE_FRAMES) toUpdate = 1000000 * MAX_UPDATE_FRAMES;
-        uint8_t nbFramesToUpdate;
-        if(toUpdate > -1000000 * UPDATE_TIMING_WINDOW)
-        {
-            if(toUpdate > 100000 * UPDATE_TIMING_WINDOW)
-                    nbFramesToUpdate = static_cast<uint8_t>(1 + (toUpdate - 100000 * UPDATE_TIMING_WINDOW) / 1000000);
-            else nbFramesToUpdate = 1;
-        }
-        else nbFramesToUpdate = 0;
+        uint8_t nbFramesToUpdate = 0;
 
         SDL_DisplayMode displayMode;
         SDL_GetWindowDisplayMode(window.sdlWindow, &displayMode);
@@ -350,18 +362,51 @@ int main(int argc, char **argv)
                         while(getTimeMicroseconds() < uSeconds + waitTime);
 
         int64_t updateStartTime = uSeconds = getTimeMicroseconds();
-        if(toUpdate > -1000000 * UPDATE_TIMING_WINDOW) do
+        switch(timestep)
         {
-            int64_t frameTime = getTimeMicroseconds();
-            SDL_PumpEvents();
-            currentScene->update(updateRate);
-            frameTime = getTimeMicroseconds() - frameTime;
-            if(frameTime < simulatedUpdateTime * 100) frameTime = simulatedUpdateTime * 100;
-            singleFrameTimes[currentFrameUpdate] = frameTime;
-            ++currentFrameUpdate %= singleFrameTimes.size();
-            toUpdate -= 1000000;
+            case Timestep::fixed:
+                currentScene->loadState();
+                if(toUpdate > -1000000 * UPDATE_TIMING_WINDOW) do
+                {
+                    int64_t frameTime = getTimeMicroseconds();
+                    currentScene->update(1000000 / updateRate, useSavedInputs ? savedInputs : inputs.getState());
+                    useSavedInputs = false;
+                    frameTime = getTimeMicroseconds() - frameTime;
+                    if(frameTime < simulatedUpdateTime * 100) frameTime = simulatedUpdateTime * 100;
+                    singleFrameTimes[currentFrameUpdate] = frameTime;
+                    ++currentFrameUpdate %= singleFrameTimes.size();
+                    toUpdate -= 1000000;
+                    nbFramesToUpdate++;
+                } while(toUpdate > 1000000 * UPDATE_TIMING_WINDOW);
+                currentScene->saveState();
+                break;
+            case Timestep::interpolation:
+                currentScene->loadState();
+                while(toUpdate > 1000000)
+                {
+                    int64_t frameTime = getTimeMicroseconds();
+                    currentScene->update(1000000 / updateRate, useSavedInputs ? savedInputs : inputs.getState());
+                    useSavedInputs = false;
+                    frameTime = getTimeMicroseconds() - frameTime;
+                    if(frameTime < simulatedUpdateTime * 100) frameTime = simulatedUpdateTime * 100;
+                    singleFrameTimes[currentFrameUpdate] = frameTime;
+                    ++currentFrameUpdate %= singleFrameTimes.size();
+                    toUpdate -= 1000000;
+                    nbFramesToUpdate++;
+                }
+                currentScene->saveState();
+                if(toUpdate > 0)
+                {
+                    if(!useSavedInputs)
+                    {
+                        savedInputs = inputs.getState();
+                        useSavedInputs = true;
+                    }
+                    currentScene->update(toUpdate / updateRate, savedInputs);
+                    nbFramesToUpdate++;
+                }
+                break;
         }
-        while(toUpdate > 1000000 * UPDATE_TIMING_WINDOW);
         while(getTimeMicroseconds() < uSeconds + nbFramesToUpdate * simulatedUpdateTime * 100);
 
         // Draw

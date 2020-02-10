@@ -18,6 +18,6 @@ private:
 public:
     GhettoInputLag();
     void displayImGuiSettings() override;
-    void update(uint16_t frameRate) override;
+    void update(uint64_t microseconds, Inputs::State state) override;
     void draw();
 };

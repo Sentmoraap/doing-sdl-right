@@ -1,20 +1,15 @@
 #include <cstring>
 #include "Scenes/AccurateInputLag.hpp"
 #include "Renderer.hpp"
-#include "Joysticks.hpp"
 
 AccurateInputLag::AccurateInputLag()
 {
     strcpy(name, "Accurate input lag");
 }
 
-void AccurateInputLag::update(uint16_t frameRate)
+void AccurateInputLag::update(uint64_t microseconds, Inputs::State inputs)
 {
-    display = false;
-    int nbKeys;
-    const Uint8* keys = SDL_GetKeyboardState(&nbKeys);
-    for(int i = 0; i < nbKeys; i++) if(keys[i]) display = true;
-    display |= joysticks.isAnyInputPressed();
+    display = inputs.pressed;
 }
 
 void AccurateInputLag::draw()

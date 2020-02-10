@@ -9,6 +9,6 @@ private:
 
 public:
     AccurateInputLag();
-    void update(uint16_t frameRate) override;
+    void update(uint64_t microseconds, Inputs::State inputs) override;
     void draw() override;
 };

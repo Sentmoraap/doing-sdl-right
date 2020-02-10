@@ -1,7 +1,6 @@
 #include <algorithm>
 #include "Scenes/GhettoInputLag.hpp"
 #include "Renderer.hpp"
-#include "Joysticks.hpp"
 #include "imgui/imgui.h"
 
 GhettoInputLag::GhettoInputLag()
@@ -17,9 +16,9 @@ void GhettoInputLag::displayImGuiSettings()
     }
 }
 
-void GhettoInputLag::update(uint16_t frameRate)
+void GhettoInputLag::update(uint64_t microseconds, Inputs::State state)
 {
-    beatTime = frameRate * 3 / 4;
+    /*beatTime = frameRate * 3 / 4;
 
     bool input = false;
     int nbKeys;
@@ -48,7 +47,7 @@ void GhettoInputLag::update(uint16_t frameRate)
             lag = total * 1000000 / (frameRate * (2 * SPREAD + 1));
         }
     }
-    prevInput = input;
+    prevInput = input;*/
 }
 
 void GhettoInputLag::draw()

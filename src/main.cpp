@@ -83,7 +83,9 @@ int main(int argc, char **argv)
     bool missedSync = true;
     int updateRate = 120;
     int simulatedUpdateTime = 0; // * 100µs
+    int randomUpdateTime = 0;
     int simulatedDrawTime = 0; // Arbitrary units
+    int randomDrawTime = 0;
     int sizeX = NATIVE_RES_X, sizeY = NATIVE_RES_Y, posX, posY;
     InputLagMitigation inputLagMitigation = InputLagMitigation::none;
     Timestep timestep = Timestep::fixed;
@@ -220,7 +222,9 @@ int main(int argc, char **argv)
         ImGui::DragInt("Update rate (Hz)", &updateRate, 0.25, 1, 300);
         enumCombo("Timestep", timestepNames, reinterpret_cast<int8_t&>(timestep), Timestep::loose);
         ImGui::DragInt("Update time *100 µs", &simulatedUpdateTime, 0.25, 0, 1000);
+        ImGui::DragInt("Random update time *100 µs", &randomUpdateTime, 0.25, 0, 1000);
         ImGui::DragInt("Draw time (arbitrary units)", &simulatedDrawTime, 0.25, 0, 1000);
+        ImGui::DragInt("Random draw time", &randomDrawTime, 0.25, 0, 1000);
         ImGui::Separator();
         ImGui::Text("Settings");
         int nbDisplays = SDL_GetNumVideoDisplays();
@@ -444,13 +448,17 @@ int main(int argc, char **argv)
                 }
                 break;
         }
-        while(getTimeMicroseconds() < uSeconds + nbFramesToUpdate * simulatedUpdateTime * 100);
+        {
+            int64_t endTime = uSeconds + nbFramesToUpdate
+                    * (simulatedUpdateTime + (randomUpdateTime ? rand() % randomUpdateTime : 0)) * 100;
+            while(getTimeMicroseconds() < endTime);
+        }
 
         // Draw
         int64_t startDrawTime = getTimeMicroseconds();
         GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         renderer.beginDrawFrame(sync);
-        renderer.longDraw(simulatedDrawTime);
+        renderer.longDraw(simulatedDrawTime + (randomDrawTime ? rand() % randomDrawTime : 0));
         currentScene->draw();
         renderer.endDrawFrame();
         sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);

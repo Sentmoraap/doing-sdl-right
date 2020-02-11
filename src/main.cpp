@@ -162,6 +162,7 @@ int main(int argc, char **argv)
         singleFrameTimes[i] = 1000000;
         drawTimes[i] = 1000000;
     }
+    for(int64_t &time : remainTimes) time = 0;
     uint8_t currentFrame = 0;
 
     // Main loop

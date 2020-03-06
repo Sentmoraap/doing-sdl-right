@@ -34,7 +34,8 @@ enum Timestep : int8_t
 {
     fixed,
     interpolation,
-    loose
+    loose,
+    looseInterpolation
 };
 
 int64_t getTimeMicroseconds()
@@ -102,11 +103,12 @@ int main(int argc, char **argv)
         "Predictive waiting"
     };
 
-    char timestepNames[Timestep::loose + 1][40] =
+    char timestepNames[Timestep::looseInterpolation + 1][40] =
     {
         "Fixed",
         "Interpolation",
-        "Loose"
+        "Loose",
+        "Loose + interpolation"
     };
 
     // Init SDL
@@ -237,7 +239,7 @@ int main(int argc, char **argv)
         ImGui::Separator();
         ImGui::Text("Game loop");
         ImGui::DragInt("Update rate (Hz)", &updateRate, 0.25, 1, 300);
-        enumCombo("Timestep", timestepNames, reinterpret_cast<int8_t&>(timestep), Timestep::loose);
+        enumCombo("Timestep", timestepNames, reinterpret_cast<int8_t&>(timestep), Timestep::looseInterpolation);
         ImGui::DragInt("Update time *100 µs", &simulatedUpdateTime, 0.25, 0, 1000);
         ImGui::DragInt("Random update time *100 µs", &randomUpdateTime, 0.25, 0, 1000);
         ImGui::DragInt("Draw time (arbitrary units)", &simulatedDrawTime, 0.25, 0, 1000);
@@ -429,6 +431,32 @@ int main(int argc, char **argv)
                 }
                 break;
             case Timestep::loose:
+                currentScene->loadState();
+                while(toUpdate > 1000000)
+                {
+                    int64_t frameTime = getTimeMicroseconds();
+                    currentScene->update((1000000 + addToUpdate) / updateRate, useSavedInputs ? savedInputs : inputs.getState());
+                    useSavedInputs = false;
+                    addToUpdate = 0;
+                    frameTime = getTimeMicroseconds() - frameTime;
+                    if(frameTime < simulatedUpdateTime * 100) frameTime = simulatedUpdateTime * 100;
+                    singleFrameTimes[currentFrameUpdate] = frameTime;
+                    ++currentFrameUpdate %= singleFrameTimes.size();
+                    toUpdate -= 1000000;
+                    nbFramesToUpdate++;
+                }
+                currentScene->saveState();
+                if(toUpdate > 0 && addToUpdate < 0 && toUpdate + dToUpdate >= 1000000)
+                {
+                    currentScene->update((toUpdate + addToUpdate) / updateRate, useSavedInputs ? savedInputs : inputs.getState());
+                    useSavedInputs = false;
+                    addToUpdate = 1000000 - (toUpdate + addToUpdate);
+                    toUpdate -= 1000000;
+                    nbFramesToUpdate++;
+                    currentScene->saveState();
+                }
+                break;
+            case Timestep::looseInterpolation:
                 currentScene->loadState();
                 while(toUpdate > 1000000)
                 {

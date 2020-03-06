@@ -34,8 +34,8 @@ void AccurateInputLag::draw()
 {
     if(cur.display)
     {
-        renderer.rect(64, 64, 960, 92);
+        renderer.rect(64, 0, 960, 32);
         renderer.rect(64, 368, 960, 400);
-        renderer.rect(64, 672, 960, 704);
+        renderer.rect(64, 736, 960, 768);
     }
 }

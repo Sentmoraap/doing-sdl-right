@@ -35,7 +35,7 @@ bool Inputs::isAnyInputPressed() const
     int nbKeys;
     const Uint8* keys = SDL_GetKeyboardState(&nbKeys);
     for(int i = 0; i < nbKeys; i++) if(keys[i]) return true;
-    
+
     return false;
 }
 

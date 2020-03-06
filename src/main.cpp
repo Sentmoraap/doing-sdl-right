@@ -167,6 +167,10 @@ int main(int argc, char **argv)
     for(int64_t &time : remainTimes) time = 0;
     uint8_t currentFrame = 0;
 
+    // Text
+    std::string text = "";
+    SDL_StartTextInput();
+
     // Main loop
     while(true)
     {
@@ -187,12 +191,23 @@ int main(int argc, char **argv)
         while (SDL_PollEvent(&event))
         {
             //ImGui_ImplSDL2_ProcessEvent(&event);
-            if (event.type == SDL_QUIT)
-                return 0;
-            if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE
-                && event.window.windowID == SDL_GetWindowID(window.sdlWindow))
-                return 0;
-            if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_ESCAPE) return 0;
+            switch(event.type)
+            {
+                case SDL_QUIT:
+                    return 0;
+                case SDL_WINDOWEVENT:
+                    if(event.window.event == SDL_WINDOWEVENT_CLOSE
+                        && event.window.windowID == SDL_GetWindowID(window.sdlWindow))
+                        return 0;
+                    break;
+                case SDL_KEYDOWN:
+                    if(event.key.keysym.sym == SDLK_ESCAPE) return 0;
+                    if(event.key.keysym.sym == SDLK_RETURN) text = "";
+                    break;
+                case SDL_TEXTINPUT:
+                    text += event.text.text;
+                    break;
+            }
         }
 
         // ImGui
@@ -217,6 +232,8 @@ int main(int argc, char **argv)
             ImGui::EndCombo();
         }
         currentScene->displayImGuiSettings();
+        ImGui::Separator();
+        ImGui::Text((std::string("Keyboard input: ") + text).c_str());
         ImGui::Separator();
         ImGui::Text("Game loop");
         ImGui::DragInt("Update rate (Hz)", &updateRate, 0.25, 1, 300);
@@ -332,7 +349,7 @@ int main(int argc, char **argv)
         if(oldScalingFilter != newScalingFilter) window.setScalingFilter(newScalingFilter);
         ImGui::DragInt("Sharpness", &window.sharpness, 0.25, 0, 100);
 
-        
+
         if(window.tripleBuffer) ImGui::Text("Triple buffer detected. This program may not behave as intended.");
         DisplayWindow::SyncMode syncMode = window.getSyncMode();
         if(ImGui::BeginCombo("V-Sync", DisplayWindow::syncModeNames[syncMode], 0))
@@ -484,7 +501,7 @@ int main(int argc, char **argv)
             glScissor(posX, -posY + wY - sizeY, sizeX, sizeY);
         }
         window.draw();
- 
+
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         int64_t drawTime = getTimeMicroseconds() - startDrawTime;
         //if(drawTime < simulatedDrawTime * 100) drawTime = simulatedDrawTime * 100;

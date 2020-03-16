@@ -286,7 +286,9 @@ void DisplayWindow::draw()
 void DisplayWindow::swap()
 {
     //std::cout << SDL_GL_GetSwapInterval() << std::endl;
+    //SDL_UpdateWindowSurface(sdlWindow);
     SDL_GL_SwapWindow(sdlWindow);
+    //SDL_UpdateWindowSurface(sdlWindow);
 }
 
 void DisplayWindow::destroy()

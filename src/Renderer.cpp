@@ -99,7 +99,7 @@ void Renderer::endDrawFrame()
 
 GLuint Renderer::loadTexture(const char* path)
 {
-    SDL_Surface *surface = IMG_Load(path);
+    /*SDL_Surface *surface = IMG_Load(path);
     GLuint ret;
     glGenTextures(1, &ret);
     glBindTexture(GL_TEXTURE_2D, ret);
@@ -107,8 +107,8 @@ GLuint Renderer::loadTexture(const char* path)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB8_ALPHA8, surface->w, surface->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, surface->pixels);
     glBindTexture(GL_TEXTURE_2D, 0);
-    SDL_FreeSurface(surface);
-    return ret;
+    SDL_FreeSurface(surface);*/
+    return 0;// ret;
 }
 
 void Renderer::rect(int16_t x0, int16_t y0, int16_t x1, int16_t y1)

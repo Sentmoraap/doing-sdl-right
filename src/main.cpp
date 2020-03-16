@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <algorithm>
+#include <fstream>
 #include <GL/glew.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_syswm.h>
@@ -78,8 +79,8 @@ void gpuHardSync()
 
 int main(int argc, char **argv)
 {
-    static constexpr uint8_t  UPDATE_TIMING_WINDOW = 0;
-    static constexpr uint8_t  MAX_UPDATE_FRAMES = 10;
+    static constexpr uint8_t UPDATE_TIMING_WINDOW = 0;
+    static constexpr uint8_t MAX_UPDATE_FRAMES = 10;
     static constexpr int AUTO_FRAME_DELAY_MARGIN = 1000;
     bool missedSync = true;
     int updateRate = 120;
@@ -90,7 +91,6 @@ int main(int argc, char **argv)
     int sizeX = NATIVE_RES_X, sizeY = NATIVE_RES_Y, posX, posY;
     InputLagMitigation inputLagMitigation = InputLagMitigation::none;
     Timestep timestep = Timestep::fixed;
-
 #ifdef _WINDOWS
     //SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     SetProcessDPIAware();
@@ -124,6 +124,7 @@ int main(int argc, char **argv)
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 0);
     SDL_GL_SetAttribute(SDL_GL_FRAMEBUFFER_SRGB_CAPABLE, 1);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_RELEASE_BEHAVIOR, 0);
+    //SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 0);
 
     // Init render context
     renderer.init();
@@ -137,6 +138,7 @@ int main(int argc, char **argv)
 
     // Init window and it's context
     DisplayWindow window;
+    DisplayWindow::SyncMode nextSyncMode = DisplayWindow::noVSync;
     window.create();
 
     // Scenes
@@ -170,8 +172,15 @@ int main(int argc, char **argv)
     uint8_t currentFrame = 0;
 
     // Text
-    std::string text = "";
+    char text[32] = { 0 };
     SDL_StartTextInput();
+
+    // Auto test
+    int8_t testNumber = -1;
+    uint16_t testRates[] = {24, 30, 48, 60, 72, 120, 144, 300};
+    uint16_t testDrawTimes[] = {0, 350, 500};
+
+    std::ofstream testOutput;
 
     // Main loop
     while(true)
@@ -192,7 +201,7 @@ int main(int argc, char **argv)
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
-            //ImGui_ImplSDL2_ProcessEvent(&event);
+            ImGui_ImplSDL2_ProcessEvent(&event);
             switch(event.type)
             {
                 case SDL_QUIT:
@@ -204,12 +213,81 @@ int main(int argc, char **argv)
                     break;
                 case SDL_KEYDOWN:
                     if(event.key.keysym.sym == SDLK_ESCAPE) return 0;
-                    if(event.key.keysym.sym == SDLK_RETURN) text = "";
+                    if(event.key.keysym.sym == SDLK_RETURN) text[0] = 0;
                     break;
                 case SDL_TEXTINPUT:
-                    text += event.text.text;
+                    strncat(text, event.text.text, sizeof(text) - strlen(text) - 1);
                     break;
             }
+        }
+
+        // In case of the game update rate is a multiple or a divider of the monitor refresh rate,
+        // sync them to have constent measurements.
+        bool resync = false;
+        
+        // Auto test
+        Inputs::State prevTestInputs;
+        {
+            Inputs::State inputsState = inputs.getState();
+            if(inputsState.test && !prevTestInputs.test && testNumber < 0)
+            {
+                currentScene = &accurateInputLag;
+                updateRate = testRates[0];
+                timestep = fixed;
+                nextSyncMode = DisplayWindow::noVSync;
+                resync = true;
+                inputLagMitigation = none;
+                testNumber = 0;
+                testOutput.open("out.csv", std::ofstream::out | std::ofstream::app);
+            }
+            if(testNumber >= 0 && inputsState.reset && !prevTestInputs.reset)
+            {
+                resync = true;
+                DisplayWindow::SyncMode curMode = window.getSyncMode();
+                testOutput << simulatedDrawTime << "," << updateRate << "," << curMode << "," << inputLagMitigation << "," 
+                        << timestep << "," << text << "," << accurateInputLag.getInputLag() << std::endl;
+                switch(timestep)
+                {
+                    case fixed:
+                        timestep = interpolation;
+                        break;
+                    case interpolation:
+                        timestep = fixed;
+                        switch(inputLagMitigation)
+                        {
+                            case none:
+                                inputLagMitigation = gpuSync;
+                                break;
+                            case gpuSync:
+                                if(curMode == DisplayWindow::noVSync)
+                                {
+                                    nextSyncMode = DisplayWindow::vSync;
+                                    inputLagMitigation = none;
+                                }
+                                else inputLagMitigation = frameDelay;
+                                break;
+                            case frameDelay:
+                                nextSyncMode = DisplayWindow::noVSync;
+                                inputLagMitigation = none;
+                                testNumber++;
+                                uint8_t nbRates = sizeof(testRates) / sizeof(testRates[0]);
+                                uint8_t nbTimes = sizeof(testDrawTimes) / sizeof(testDrawTimes[0]);
+                                if(testNumber >= nbRates * nbTimes)
+                                {
+                                    testNumber = -1;
+                                    testOutput.close();
+                                }
+                                else
+                                {
+                                    updateRate = testRates[testNumber % nbRates];
+                                    simulatedDrawTime = testDrawTimes[testNumber / nbRates];
+                                    randomDrawTime = simulatedDrawTime / 5;
+                                }
+                        }
+
+                }
+            }
+            prevTestInputs = inputsState;
         }
 
         // ImGui
@@ -303,6 +381,7 @@ int main(int argc, char **argv)
 
         if(recreateWindow)
         {
+            resync = true;
             window.destroy();
             renderer.useContext();
             SDL_Rect rect;
@@ -357,9 +436,13 @@ int main(int argc, char **argv)
         if(ImGui::BeginCombo("V-Sync", DisplayWindow::syncModeNames[syncMode], 0))
         {
             for(int i = 0; i <= DisplayWindow::SyncMode::vSync; i++)
-                    if(window.isSyncModeAvailable(static_cast<DisplayWindow::SyncMode>(i))
-                            && ImGui::Selectable(DisplayWindow::syncModeNames[i], i == syncMode))
-                                    window.setSyncMode(static_cast<DisplayWindow::SyncMode>(i));
+                if(window.isSyncModeAvailable(static_cast<DisplayWindow::SyncMode>(i))
+                    && ImGui::Selectable(DisplayWindow::syncModeNames[i], i == syncMode))
+            {
+                nextSyncMode = static_cast<DisplayWindow::SyncMode>(i);
+                window.setSyncMode(DisplayWindow::vSync);
+                resync = true;
+            }
             ImGui::EndCombo();
         }
         enumCombo("Input lag mitigation", inputLagMitigationNames, reinterpret_cast<int8_t&>(inputLagMitigation),
@@ -386,6 +469,7 @@ int main(int argc, char **argv)
         waitTime = *std::min_element(remainTimes.cbegin(), remainTimes.cend()) - AUTO_FRAME_DELAY_MARGIN;
         if(!missedSync && inputLagMitigation == InputLagMitigation::frameDelay && waitTime > 0)
                         while(getTimeMicroseconds() < uSeconds + waitTime);
+        else waitTime = 0;
 
         int64_t updateStartTime = uSeconds = getTimeMicroseconds();
         switch(timestep)
@@ -514,7 +598,7 @@ int main(int argc, char **argv)
 
         window.useContext();
         glWaitSync(sync, 0, GL_TIMEOUT_IGNORED);
-        ImGui::Render();
+        if(testNumber < 0) ImGui::Render();
 
         if(window.windowMode == DisplayWindow::WindowMode::windowed)
         {
@@ -530,15 +614,20 @@ int main(int argc, char **argv)
         }
         window.draw();
 
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        if(testNumber < 0) ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         int64_t drawTime = getTimeMicroseconds() - startDrawTime;
         //if(drawTime < simulatedDrawTime * 100) drawTime = simulatedDrawTime * 100;
         drawTimes[currentFrameDraw] = drawTime;
         ++currentFrameDraw %= drawTimes.size();
-        if(inputLagMitigation >= InputLagMitigation::gpuSync) gpuHardSync();
+        if(inputLagMitigation >= InputLagMitigation::frameDelay) gpuHardSync();
         int64_t beforeSwapTime = getTimeMicroseconds();
         window.swap();
-        if(inputLagMitigation >= InputLagMitigation::gpuSync) gpuHardSync();
+        if(resync || inputLagMitigation >= InputLagMitigation::gpuSync) gpuHardSync();
+        if(resync)
+        {
+            toUpdate = 0;
+            window.setSyncMode(nextSyncMode);
+        }
         int64_t afterSwapTime = getTimeMicroseconds();
         if(inputLagMitigation >= InputLagMitigation::gpuSync) switch(window.getSyncMode())
         {
@@ -547,7 +636,7 @@ int main(int argc, char **argv)
                 break;
             case DisplayWindow::SyncMode::adaptiveSync:
             case DisplayWindow::SyncMode::vSync:
-                int64_t remainingTime = displayRefreshPeriod - (beforeSwapTime - startTime);
+                int64_t remainingTime = displayRefreshPeriod - (beforeSwapTime - startTime) + waitTime;
                 remainTimes[currentFrame] = remainingTime;
                 missedSync = (afterSwapTime - startTime) >= displayRefreshPeriod * 1.1;
                 break;

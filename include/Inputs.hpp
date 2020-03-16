@@ -15,7 +15,7 @@ class Inputs
         struct State
         {
             int16_t x, y;
-            bool pressed;
+            bool pressed : 1, test : 1, reset : 1;
         };
         void init();
         State getState();

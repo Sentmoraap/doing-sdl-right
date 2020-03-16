@@ -16,6 +16,10 @@ Inputs::State Inputs::getState()
     SDL_PumpEvents();
     State ret;
     ret.pressed = isAnyInputPressed();
+    int nbKeys;
+    const Uint8* keys = SDL_GetKeyboardState(&nbKeys);
+    ret.test = nbKeys > SDL_SCANCODE_T && keys[SDL_SCANCODE_T];
+    ret.reset = nbKeys > SDL_SCANCODE_R && keys[SDL_SCANCODE_R];
     std::tie(ret.x, ret.y) = getXY();
     return ret;
 }
@@ -34,7 +38,7 @@ bool Inputs::isAnyInputPressed() const
     // Keyboard
     int nbKeys;
     const Uint8* keys = SDL_GetKeyboardState(&nbKeys);
-    for(int i = 0; i < nbKeys; i++) if(keys[i]) return true;
+    for(int i = 0; i < nbKeys; i++) if(keys[i] && i != SDL_SCANCODE_T && i != SDL_SCANCODE_R) return true;
 
     return false;
 }

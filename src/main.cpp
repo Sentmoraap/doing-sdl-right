@@ -8,6 +8,7 @@
 #include <GL/glew.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_syswm.h>
+#include <thread>
 #include "imgui/imgui.h"
 #include "imgui/imgui_impl_sdl.h"
 #include "imgui/imgui_impl_opengl3.h"
@@ -82,6 +83,7 @@ int main(int argc, char **argv)
     static constexpr uint8_t UPDATE_TIMING_WINDOW = 0;
     static constexpr uint8_t MAX_UPDATE_FRAMES = 10;
     static constexpr int AUTO_FRAME_DELAY_MARGIN = 1000;
+    static constexpr int SLEEP_MARGIN = 2000;
     bool missedSync = true;
     int updateRate = 120;
     int simulatedUpdateTime = 0; // * 100µs
@@ -157,7 +159,6 @@ int main(int argc, char **argv)
     int64_t toUpdate = 0;
     int64_t addToUpdate = 0;
     uint8_t currentFrameUpdate = 0, currentFrameDraw = 0;
-    int64_t waitTime;
     std::array<int64_t, 16> frameTimes;
     std::array<int64_t, frameTimes.size()> iterationTimes;
     std::array<int64_t, frameTimes.size()> remainTimes;
@@ -178,7 +179,7 @@ int main(int argc, char **argv)
     // Auto test
     int8_t testNumber = -1;
     uint16_t testRates[] = {24, 30, 48, 60, 72, 120, 144, 300};
-    uint16_t testDrawTimes[] = {0, 350, 500};
+    uint16_t testDrawTimes[] = { 0, 150, 350, 500 };
 
     std::ofstream testOutput;
 
@@ -233,6 +234,8 @@ int main(int argc, char **argv)
             {
                 currentScene = &accurateInputLag;
                 updateRate = testRates[0];
+                simulatedDrawTime = testDrawTimes[0];
+                randomDrawTime = simulatedDrawTime / 5;
                 timestep = fixed;
                 nextSyncMode = DisplayWindow::noVSync;
                 resync = true;
@@ -244,48 +247,40 @@ int main(int argc, char **argv)
             {
                 resync = true;
                 DisplayWindow::SyncMode curMode = window.getSyncMode();
-                testOutput << simulatedDrawTime << "," << updateRate << "," << curMode << "," << inputLagMitigation << "," 
+                testOutput << simulatedDrawTime << "," << updateRate << "," << curMode << "," << inputLagMitigation << ","
                         << timestep << "," << text << "," << accurateInputLag.getInputLag() << std::endl;
-                switch(timestep)
+                switch(inputLagMitigation)
                 {
-                    case fixed:
-                        timestep = interpolation;
+                    case none:
+                        inputLagMitigation = gpuSync;
                         break;
-                    case interpolation:
-                        timestep = fixed;
-                        switch(inputLagMitigation)
+                    case gpuSync:
+                        if(curMode == DisplayWindow::noVSync)
                         {
-                            case none:
-                                inputLagMitigation = gpuSync;
-                                break;
-                            case gpuSync:
-                                if(curMode == DisplayWindow::noVSync)
-                                {
-                                    nextSyncMode = DisplayWindow::vSync;
-                                    inputLagMitigation = none;
-                                }
-                                else inputLagMitigation = frameDelay;
-                                break;
-                            case frameDelay:
-                                nextSyncMode = DisplayWindow::noVSync;
-                                inputLagMitigation = none;
-                                testNumber++;
-                                uint8_t nbRates = sizeof(testRates) / sizeof(testRates[0]);
-                                uint8_t nbTimes = sizeof(testDrawTimes) / sizeof(testDrawTimes[0]);
-                                if(testNumber >= nbRates * nbTimes)
-                                {
-                                    testNumber = -1;
-                                    testOutput.close();
-                                }
-                                else
-                                {
-                                    updateRate = testRates[testNumber % nbRates];
-                                    simulatedDrawTime = testDrawTimes[testNumber / nbRates];
-                                    randomDrawTime = simulatedDrawTime / 5;
-                                }
+                            nextSyncMode = DisplayWindow::vSync;
+                            inputLagMitigation = none;
                         }
-
+                        else inputLagMitigation = frameDelay;
+                        break;
+                    case frameDelay:
+                        nextSyncMode = DisplayWindow::noVSync;
+                        inputLagMitigation = none;
+                        testNumber++;
+                        uint8_t nbRates = sizeof(testRates) / sizeof(testRates[0]);
+                        uint8_t nbTimes = sizeof(testDrawTimes) / sizeof(testDrawTimes[0]);
+                        if(testNumber >= nbRates * nbTimes)
+                        {
+                            testNumber = -1;
+                            testOutput.close();
+                        }
+                        else
+                        {
+                            updateRate = testRates[testNumber % nbRates];
+                            simulatedDrawTime = testDrawTimes[testNumber / nbRates];
+                            randomDrawTime = simulatedDrawTime / 5;
+                        }
                 }
+
             }
             prevTestInputs = inputsState;
         }
@@ -466,9 +461,20 @@ int main(int argc, char **argv)
         SDL_DisplayMode displayMode;
         SDL_GetWindowDisplayMode(window.sdlWindow, &displayMode);
         int64_t displayRefreshPeriod = 1000000 / displayMode.refresh_rate;
-        waitTime = *std::min_element(remainTimes.cbegin(), remainTimes.cend()) - AUTO_FRAME_DELAY_MARGIN;
+        int64_t waitTime = *std::min_element(remainTimes.cbegin(), remainTimes.cend()) - AUTO_FRAME_DELAY_MARGIN;
         if(!missedSync && inputLagMitigation == InputLagMitigation::frameDelay && waitTime > 0)
-                        while(getTimeMicroseconds() < uSeconds + waitTime);
+        {
+            while(true)
+            {
+                int64_t micros = getTimeMicroseconds();
+                if(micros < uSeconds + waitTime)
+                {
+                    int64_t sleepTime = uSeconds + waitTime - micros - SLEEP_MARGIN;              
+                    if(sleepTime) std::this_thread::sleep_for(std::chrono::microseconds(sleepTime));
+                }
+                else break;
+            }
+        }
         else waitTime = 0;
 
         int64_t updateStartTime = uSeconds = getTimeMicroseconds();

@@ -80,7 +80,6 @@ void gpuHardSync()
 
 int main(int argc, char **argv)
 {
-    static constexpr uint8_t UPDATE_TIMING_WINDOW = 0;
     static constexpr uint8_t MAX_UPDATE_FRAMES = 10;
     static constexpr int AUTO_FRAME_DELAY_MARGIN = 1000;
     static constexpr int SLEEP_MARGIN = 2000;
@@ -179,7 +178,7 @@ int main(int argc, char **argv)
     // Auto test
     int8_t testNumber = -1;
     uint16_t testRates[] = {24, 30, 48, 60, 72, 120, 144, 300};
-    uint16_t testDrawTimes[] = { 0, 150, 350, 500 };
+    uint16_t testDrawTimes[] = {150, 350, 500, 0};
 
     std::ofstream testOutput;
 
@@ -457,6 +456,18 @@ int main(int argc, char **argv)
 
         if(toUpdate > 1000000 * MAX_UPDATE_FRAMES) toUpdate = 1000000 * MAX_UPDATE_FRAMES;
         uint8_t nbFramesToUpdate = 0;
+        if(window.getSyncMode() == DisplayWindow::noVSync && timestep == fixed)
+        {
+            while(toUpdate <= 1000000)
+            {
+                int64_t sleepTime = (1000000 - toUpdate) / updateRate - SLEEP_MARGIN;
+                if(sleepTime > 0) std::this_thread::sleep_for(std::chrono::microseconds(sleepTime));
+                uSeconds = getTimeMicroseconds();
+                dToUpdate = (uSeconds - prevUseconds) * updateRate;
+                toUpdate += dToUpdate;
+                prevUseconds = uSeconds;
+            }
+        }
 
         SDL_DisplayMode displayMode;
         SDL_GetWindowDisplayMode(window.sdlWindow, &displayMode);
@@ -470,7 +481,7 @@ int main(int argc, char **argv)
                 if(micros < uSeconds + waitTime)
                 {
                     int64_t sleepTime = uSeconds + waitTime - micros - SLEEP_MARGIN;              
-                    if(sleepTime) std::this_thread::sleep_for(std::chrono::microseconds(sleepTime));
+                    if(sleepTime > 0) std::this_thread::sleep_for(std::chrono::microseconds(sleepTime));
                 }
                 else break;
             }
@@ -481,7 +492,7 @@ int main(int argc, char **argv)
         switch(timestep)
         {
             case Timestep::fixed:
-                if(toUpdate > -1000000 * UPDATE_TIMING_WINDOW) do
+                while(toUpdate > 1000000)
                 {
                     int64_t frameTime = getTimeMicroseconds();
                     currentScene->update(1000000 / updateRate, inputs.getState());
@@ -491,7 +502,7 @@ int main(int argc, char **argv)
                     ++currentFrameUpdate %= singleFrameTimes.size();
                     toUpdate -= 1000000;
                     nbFramesToUpdate++;
-                } while(toUpdate > 1000000 * UPDATE_TIMING_WINDOW);
+                }
                 currentScene->saveState();
                 break;
             case Timestep::interpolation:

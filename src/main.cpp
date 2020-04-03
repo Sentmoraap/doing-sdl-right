@@ -80,7 +80,7 @@ void gpuHardSync()
 
 int main(int argc, char **argv)
 {
-    static constexpr uint8_t MAX_UPDATE_FRAMES = 10;
+    static constexpr uint8_t MAX_UPDATE_FRAMES_DIV = 10;
     static constexpr int AUTO_FRAME_DELAY_MARGIN = 1000;
     static constexpr int SLEEP_MARGIN = 2000;
     bool missedSync = true;
@@ -454,7 +454,8 @@ int main(int argc, char **argv)
         toUpdate += dToUpdate;
         prevUseconds = uSeconds;
 
-        if(toUpdate > 1000000 * MAX_UPDATE_FRAMES) toUpdate = 1000000 * MAX_UPDATE_FRAMES;
+        uint8_t maxUpdateFrames = (updateRate / MAX_UPDATE_FRAMES_DIV) + 2;
+        if(toUpdate > 1000000 * maxUpdateFrames) toUpdate = 1000000 * maxUpdateFrames;
         uint8_t nbFramesToUpdate = 0;
         if(window.getSyncMode() == DisplayWindow::noVSync && timestep == fixed)
         {
@@ -466,6 +467,7 @@ int main(int argc, char **argv)
                 dToUpdate = (uSeconds - prevUseconds) * updateRate;
                 toUpdate += dToUpdate;
                 prevUseconds = uSeconds;
+                if(inputLagMitigation == InputLagMitigation::gpuSync) gpuHardSync();
             }
         }
 

@@ -9,7 +9,7 @@ out vec3 fragColor;
 float lanczos3(float x)
 {
 	x = max(abs(x), 0.00001);
-	float val = x * 3.142592654;
+	float val = x * 3.141592654;
 	return sin(val) * sin(val / 3) / (val * val);
 }
 

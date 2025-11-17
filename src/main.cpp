@@ -93,8 +93,8 @@ int main(int argc, char **argv)
     InputLagMitigation inputLagMitigation = InputLagMitigation::none;
     Timestep timestep = Timestep::fixed;
 #ifdef _WINDOWS
-    //SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-    SetProcessDPIAware();
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    //SetProcessDPIAware();
 #endif
 
     char inputLagMitigationNames[InputLagMitigation::frameDelay + 1][40] =
@@ -196,7 +196,7 @@ int main(int argc, char **argv)
         }
         uint32_t iterationTime = 0;
         for(int64_t frameIterationTime : iterationTimes) iterationTime += static_cast<uint32_t>(frameIterationTime);
-        iterationTime /= iterationTimes.size();
+        iterationTime /= static_cast<uint32_t>(iterationTimes.size());
 
         SDL_Event event;
         while (SDL_PollEvent(&event))
@@ -213,7 +213,7 @@ int main(int argc, char **argv)
                     break;
                 case SDL_KEYDOWN:
                     if(event.key.keysym.sym == SDLK_ESCAPE) return 0;
-                    if(event.key.keysym.sym == SDLK_RETURN) text[0] = 0;
+                    if(event.key.keysym.sym == SDLK_BACKSPACE) text[0] = 0;
                     break;
                 case SDL_TEXTINPUT:
                     strncat(text, event.text.text, sizeof(text) - strlen(text) - 1);
@@ -246,8 +246,10 @@ int main(int argc, char **argv)
             {
                 resync = true;
                 DisplayWindow::SyncMode curMode = window.getSyncMode();
-                testOutput << simulatedDrawTime << "," << updateRate << "," << curMode << "," << inputLagMitigation << ","
-                        << timestep << "," << text << "," << accurateInputLag.getInputLag() << std::endl;
+                float lag0, lag1;
+                std::tie(lag0, lag1) = accurateInputLag.getInputLags();
+                testOutput << simulatedDrawTime << "," << updateRate << "," << curMode << "," << inputLagMitigation <<
+                        "," << timestep << "," << text << "," << lag0 << "," << lag1 << std::endl;
                 switch(inputLagMitigation)
                 {
                     case none:

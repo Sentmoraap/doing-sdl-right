@@ -163,34 +163,34 @@ GLuint Renderer::loadShaders(const char* vert, const char* frag)
     GLuint vertexShader=glCreateShader(GL_VERTEX_SHADER);
     GLuint fragmentShader=glCreateShader(GL_FRAGMENT_SHADER);
     GLuint program=glCreateProgram();
-    char buffer[16384];
+    char buffer[8192];
     const char* buf=buffer;
     GLint length;
     FILE* f;
 
     // Load and compile the vertex shader
     f = fopen(vert, "rt");
-    length=fread(buffer,1,16384,f);
+    length = static_cast<GLint>(fread(buffer, 1, 8192, f));
     fclose(f);
     glShaderSource(vertexShader,1,&buf,&length);
     glCompileShader(vertexShader);
-    glGetShaderInfoLog(vertexShader,16384,&length,buffer);
+    glGetShaderInfoLog(vertexShader, 8192,&length,buffer);
     if(length) std::cout << "Vertex shader: " << buffer << std::endl;
 
     // Load and compile the fragment shader
     f = fopen(frag, "rt");
-    length=fread(buffer,1,16384,f);
+    length = static_cast<GLint>(fread(buffer, 1, 8192, f));
     fclose(f);
     glShaderSource(fragmentShader,1,&buf,&length);
     glCompileShader(fragmentShader);
-    glGetShaderInfoLog(fragmentShader,16384,&length,buffer);
+    glGetShaderInfoLog(fragmentShader, 8192, &length,buffer);
     if(length) std::cout << "Fragment shader: " << buffer << std::endl;
 
     // Link shaders
     glAttachShader(program,vertexShader);
     glAttachShader(program,fragmentShader);
     glLinkProgram(program);
-    glGetProgramInfoLog(program,16384,&length,buffer);
+    glGetProgramInfoLog(program, 8192, &length,buffer);
     if(length) std::cout << "Link: " << buffer << std::endl;
 
     return program;

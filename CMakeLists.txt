@@ -26,8 +26,9 @@ ADD_EXECUTABLE(sdl-test ${project_files})
 SET(CURRENT_TARGETS sdl-test)
 
 IF(WIN32)
-	SET(CMAKE_INCLUDE_PATH "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/include")
-	SET(CMAKE_LIBRARY_PATH "C:/Program Files (x86)/Microsoft Visual Studio 14.0/VC/lib")
+    SET(VCPKG_PATH "D:/Projets/vcpkg")
+    SET(CMAKE_INCLUDE_PATH ${VCPKG_PATH}"/installed/x64-windows/include")
+    SET(CMAKE_LIBRARY_PATH ${VCPKG_PATH}"/installed/x64-windows/lib")
 ENDIF(WIN32)
 
 SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")

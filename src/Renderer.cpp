@@ -85,6 +85,7 @@ void Renderer::beginDrawFrame(GLsync sync)
 {
     SDL_GL_MakeCurrent(window, context);
     glWaitSync(sync, 0, GL_TIMEOUT_IGNORED);
+    glDeleteSync(sync);
     glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glViewport(0, 0, NATIVE_RES_X, NATIVE_RES_Y);
     glScissor(0, 0, NATIVE_RES_X, NATIVE_RES_Y);

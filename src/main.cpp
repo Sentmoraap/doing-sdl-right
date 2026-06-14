@@ -42,18 +42,23 @@ enum Timestep : int8_t
 
 int64_t getTimeMicroseconds()
 {
-    return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().time_since_epoch())
-                .count();
+    return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now().
+            time_since_epoch()).count();
 }
 
-void enumCombo(const char *comboName, const char (*enumNames)[40], int8_t &value, int8_t max)
+bool enumCombo(const char *comboName, const char (*enumNames)[40], int8_t &value, int8_t max)
 {
+    bool result = false;
     if(ImGui::BeginCombo(comboName, enumNames[value], 0))
     {
-        for(int8_t i = 0; i <= max; i++)
-            if(ImGui::Selectable(enumNames[i], i == value)) value = i;
+        for(int8_t i = 0; i <= max; i++) if(ImGui::Selectable(enumNames[i], i == value))
+        {
+            value = i;
+            result = true;
+        }
         ImGui::EndCombo();
     }
+    return result;
 }
 
 void computeWindowSize(int &posX, int &posY, int &sizeX, int &sizeY)
@@ -81,15 +86,19 @@ void gpuHardSync()
 int main(int argc, char **argv)
 {
     static constexpr uint8_t MAX_UPDATE_FRAMES_DIV = 10;
-    static constexpr int AUTO_FRAME_DELAY_MARGIN = 1000;
     static constexpr int SLEEP_MARGIN = 2000;
+    static constexpr int FRAME_DELAY_MARGIN_MULT = 128;
     bool missedSync = true;
+    bool displayImGui = true;
     int updateRate = 120;
+    int numMissedSyncs = 0, numSyncs = 0;
+    float frameRatio;
     int simulatedUpdateTime = 0; // * 100µs
     int randomUpdateTime = 0;
     int simulatedDrawTime = 0; // Arbitrary units
     int randomDrawTime = 0;
     int sizeX = NATIVE_RES_X, sizeY = NATIVE_RES_Y, posX, posY;
+    int64_t frameDelayMargin = 0;
     InputLagMitigation inputLagMitigation = InputLagMitigation::none;
     Timestep timestep = Timestep::fixed;
 #ifdef _WINDOWS
@@ -181,13 +190,13 @@ int main(int argc, char **argv)
     uint16_t testDrawTimes[] = {150, 350, 500, 0};
 
     std::ofstream testOutput;
-
+    
+    int64_t startTime = getTimeMicroseconds();
     // Main loop
     while(true)
     {
         // Measure frame rate
         uint16_t frameRate;
-        int64_t startTime = getTimeMicroseconds();
         {
             int64_t prevTime = frameTimes[currentFrame];
             frameTimes[currentFrame] = startTime;
@@ -214,6 +223,16 @@ int main(int argc, char **argv)
                 case SDL_KEYDOWN:
                     if(event.key.keysym.sym == SDLK_ESCAPE) return 0;
                     if(event.key.keysym.sym == SDLK_BACKSPACE) text[0] = 0;
+                    if(event.key.keysym.sym == SDLK_d)
+                    {
+                        displayImGui = !displayImGui;
+                        SDL_ShowCursor(displayImGui ? SDL_ENABLE : SDL_DISABLE);
+                    }
+                    if(event.key.keysym.sym == SDLK_r) 
+                    {
+                        numMissedSyncs = 0;
+                        numSyncs = 0;
+                    }
                     break;
                 case SDL_TEXTINPUT:
                     strncat(text, event.text.text, sizeof(text) - strlen(text) - 1);
@@ -287,171 +306,184 @@ int main(int argc, char **argv)
         }
 
         // ImGui
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplSDL2_NewFrame(window.sdlWindow);
-        ImGui::NewFrame();
-        ImGui::Begin("Stuff");
-        ImGui::Text("%6d FPS", frameRate);
-        ImGui::Text("%6d µs", iterationTime);
-        //if(missedSync) ImGui::Text("VBL missed");
-        ImGui::Separator();
-        ImGui::Text("Scene");
-        if(ImGui::BeginCombo("", currentScene->getName(), 0))
+        if(displayImGui)
         {
-            for(Scene *scene : scenes)
-            {
-                if(ImGui::Selectable(scene->getName(), scene == currentScene))
-                {
-                    currentScene = scene;
-                }
-            }
-            ImGui::EndCombo();
-        }
-        currentScene->displayImGuiSettings();
-        ImGui::Separator();
-        ImGui::Text((std::string("Keyboard input: ") + text).c_str());
-        ImGui::Separator();
-        ImGui::Text("Game loop");
-        ImGui::DragInt("Update rate (Hz)", &updateRate, 0.25, 1, 300);
-        enumCombo("Timestep", timestepNames, reinterpret_cast<int8_t&>(timestep), Timestep::looseInterpolation);
-        ImGui::DragInt("Update time *100 µs", &simulatedUpdateTime, 0.25, 0, 1000);
-        ImGui::DragInt("Random update time *100 µs", &randomUpdateTime, 0.25, 0, 1000);
-        ImGui::DragInt("Draw time (arbitrary units)", &simulatedDrawTime, 0.25, 0, 1000);
-        ImGui::DragInt("Random draw time", &randomDrawTime, 0.25, 0, 1000);
-        ImGui::Separator();
-        ImGui::Text("Settings");
-        int nbDisplays = SDL_GetNumVideoDisplays();
-        if(window.fullscreenDisplay >= nbDisplays) window.fullscreenDisplay = 0;
-        char itemName[32];
-        snprintf(itemName, 32, "%s on display %hhd", DisplayWindow::windowModeNames[window.windowMode],
-                window.fullscreenDisplay);
-        bool recreateWindow = false;
-        if(ImGui::BeginCombo("Window mode", window.windowMode == DisplayWindow::WindowMode::windowed
-                ? window.windowModeNames[DisplayWindow::WindowMode::windowed]
-                : itemName, 0))
-        {
-            for(int8_t wm = DisplayWindow::WindowMode::windowed; wm <= DisplayWindow::WindowMode::fullscreen; wm++)
-            {
-                if(wm == DisplayWindow::WindowMode::windowed)
-                {
-                    if(ImGui::Selectable(DisplayWindow::windowModeNames[DisplayWindow::WindowMode::windowed],
-                        window.windowMode == DisplayWindow::WindowMode::windowed))
-                    {
-                        window.windowMode = DisplayWindow::WindowMode::windowed;
-                        recreateWindow = true;
-                    }
-                }
-                else for(int display = 0; display < nbDisplays; display++)
-                {
-                    snprintf(itemName, 32, "%s on display %hhd", window.windowModeNames[wm], display);
-                    if(ImGui::Selectable(itemName, wm == window.windowMode && display == window.fullscreenDisplay))
-                    {
-                        window.windowMode = static_cast<DisplayWindow::WindowMode>(wm);
-                        window.fullscreenDisplay = display;
-                        recreateWindow = true;
-                    }
-                }
-            }
-            ImGui::EndCombo();
-        }
-
-        SDL_DisplayMode dm;
-        SDL_GetDisplayMode(window.fullscreenDisplay, window.displayMode, &dm);
-        snprintf(itemName, 32, "%dx%d@%d", dm.w, dm.h, dm.refresh_rate);
-        if(ImGui::BeginCombo("Display mode", itemName, 0))
-        {
-            int nbDisplayModes = SDL_GetNumDisplayModes(window.fullscreenDisplay);
-            for(int i = 0; i < nbDisplayModes; i++)
-            {
-                SDL_GetDisplayMode(window.fullscreenDisplay, i, &dm);
-                snprintf(itemName, 32, "%dx%d@%d", dm.w, dm.h, dm.refresh_rate);
-                if(ImGui::Selectable(itemName, i == window.displayMode))
-                {
-                    window.displayMode = i;
-                    if(window.windowMode == DisplayWindow::WindowMode::fullscreen)
-                        recreateWindow = true;
-                }
-            }
-            ImGui::EndCombo();
-        }
-
-        if(recreateWindow)
-        {
-            resync = true;
-            window.destroy();
-            renderer.useContext();
-            SDL_Rect rect;
-            SDL_GetDisplayBounds(window.fullscreenDisplay, &rect);
-            switch(window.windowMode)
-            {
-                case DisplayWindow::windowed:
-                    sizeX = NATIVE_RES_X;
-                    sizeY = NATIVE_RES_Y;
-                break;
-                case DisplayWindow::borderless:
-                    posX = 0; posY = 0; sizeX = rect.w; sizeY = rect.h;
-                    computeWindowSize(posX, posY, sizeX, sizeY);
-                break;
-                case DisplayWindow::fullscreen:
-                    SDL_DisplayMode dm;
-                    SDL_GetDisplayMode(window.fullscreenDisplay, window.displayMode, &dm);
-                    posX = 0; posY = 0; sizeX = dm.w; sizeY = dm.h;
-                    computeWindowSize(posX, posY, sizeX, sizeY);
-                break;
-            }
-            window.create();
-            SDL_SetWindowInputFocus(window.sdlWindow);
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplSDL2_NewFrame(window.sdlWindow);
             ImGui::NewFrame();
             ImGui::Begin("Stuff");
-        }
-
-        if(window.windowMode == DisplayWindow::WindowMode::windowed)
-                SDL_GetWindowPosition(window.sdlWindow, &posX, &posY);
-        ImGui::DragInt("Position X", &posX, 0.25, -16384, 16384);
-        ImGui::DragInt("Position Y", &posY, 0.25, -16384, 16384);
-        if(window.windowMode == DisplayWindow::WindowMode::windowed)
-        {
-            SDL_SetWindowPosition(window.sdlWindow, posX, posY);
-            SDL_GetWindowSize(window.sdlWindow, &sizeX, &sizeY);
-        }
-        ImGui::DragInt("Size X", &sizeX, 0.25, 1, NATIVE_RES_X * 10);
-        ImGui::DragInt("Size Y", &sizeY, 0.25, 1, NATIVE_RES_Y * 10);
-        if(window.windowMode == DisplayWindow::WindowMode::windowed) SDL_SetWindowSize(window.sdlWindow, sizeX, sizeY);
-        DisplayWindow::ScalingFilter oldScalingFilter = window.getScalingFilter(), newScalingFilter = oldScalingFilter;
-
-        enumCombo("Scaling filter", DisplayWindow::scalingFilterNames, reinterpret_cast<int8_t&>(newScalingFilter),
-            DisplayWindow::ScalingFilter::lanczos3);
-        if(oldScalingFilter != newScalingFilter) window.setScalingFilter(newScalingFilter);
-        ImGui::DragInt("Sharpness", &window.sharpness, 0.25, 0, 100);
-
-
-        if(window.tripleBuffer) ImGui::Text("Triple buffer detected. This program may not behave as intended.");
-        DisplayWindow::SyncMode syncMode = window.getSyncMode();
-        if(ImGui::BeginCombo("V-Sync", DisplayWindow::syncModeNames[syncMode], 0))
-        {
-            for(int i = 0; i <= DisplayWindow::SyncMode::vSync; i++)
-                if(window.isSyncModeAvailable(static_cast<DisplayWindow::SyncMode>(i))
-                    && ImGui::Selectable(DisplayWindow::syncModeNames[i], i == syncMode))
+            ImGui::Text("%6d FPS", frameRate);
+            ImGui::Text("%6d µs", iterationTime);
+            ImGui::Text("%d frames, %d missed syncs", numSyncs, numMissedSyncs);
+            ImGui::Text("%f frame ratio", frameRatio);
+            int64_t remainTime = *std::min_element(remainTimes.cbegin(), remainTimes.cend());
+            ImGui::Text("Remain time = %d", remainTime);
+            ImGui::Text("Frame delay margin = %d", frameDelayMargin / FRAME_DELAY_MARGIN_MULT);
+            //if(missedSync) ImGui::Text("VBL missed");
+            ImGui::Separator();
+            ImGui::Text("Scene");
+            if(ImGui::BeginCombo("", currentScene->getName(), 0))
             {
-                nextSyncMode = static_cast<DisplayWindow::SyncMode>(i);
-                window.setSyncMode(DisplayWindow::vSync);
-                resync = true;
+                for(Scene *scene : scenes)
+                {
+                    if(ImGui::Selectable(scene->getName(), scene == currentScene))
+                    {
+                        currentScene = scene;
+                    }
+                }
+                ImGui::EndCombo();
             }
-            ImGui::EndCombo();
-        }
-        enumCombo("Input lag mitigation", inputLagMitigationNames, reinterpret_cast<int8_t&>(inputLagMitigation),
-                syncMode == DisplayWindow::SyncMode::noVSync ? InputLagMitigation::gpuSync
-                                                             : InputLagMitigation::frameDelay);
-        ImGui::End();
+            currentScene->displayImGuiSettings();
+            ImGui::Separator();
+            ImGui::Text((std::string("Keyboard input: ") + text).c_str());
+            ImGui::Separator();
+            ImGui::Text("Game loop");
+            ImGui::DragInt("Update rate (Hz)", &updateRate, 0.25, 1, 300);
+            enumCombo("Timestep", timestepNames, reinterpret_cast<int8_t&>(timestep), Timestep::looseInterpolation);
+            ImGui::DragInt("Update time *100 µs", &simulatedUpdateTime, 0.25, 0, 1000);
+            ImGui::DragInt("Random update time *100 µs", &randomUpdateTime, 0.25, 0, 1000);
+            ImGui::DragInt("Draw time (arbitrary units)", &simulatedDrawTime, 0.25, 0, 1000);
+            ImGui::DragInt("Random draw time", &randomDrawTime, 0.25, 0, 1000);
+            ImGui::Separator();
+            ImGui::Text("Settings");
+            int nbDisplays = SDL_GetNumVideoDisplays();
+            if(window.fullscreenDisplay >= nbDisplays) window.fullscreenDisplay = 0;
+            char itemName[32];
+            snprintf(itemName, 32, "%s on display %hhd", DisplayWindow::windowModeNames[window.windowMode],
+                    window.fullscreenDisplay);
+            bool recreateWindow = false;
+            if(ImGui::BeginCombo("Window mode", window.windowMode == DisplayWindow::WindowMode::windowed
+                    ? window.windowModeNames[DisplayWindow::WindowMode::windowed]
+                    : itemName, 0))
+            {
+                for(int8_t wm = DisplayWindow::WindowMode::windowed; wm <= DisplayWindow::WindowMode::fullscreen; wm++)
+                {
+                    if(wm == DisplayWindow::WindowMode::windowed)
+                    {
+                        if(ImGui::Selectable(DisplayWindow::windowModeNames[DisplayWindow::WindowMode::windowed],
+                            window.windowMode == DisplayWindow::WindowMode::windowed))
+                        {
+                            window.windowMode = DisplayWindow::WindowMode::windowed;
+                            recreateWindow = true;
+                        }
+                    }
+                    else for(int display = 0; display < nbDisplays; display++)
+                    {
+                        snprintf(itemName, 32, "%s on display %hhd", window.windowModeNames[wm], display);
+                        if(ImGui::Selectable(itemName, wm == window.windowMode && display == window.fullscreenDisplay))
+                        {
+                            window.windowMode = static_cast<DisplayWindow::WindowMode>(wm);
+                            window.fullscreenDisplay = display;
+                            recreateWindow = true;
+                        }
+                    }
+                }
+                ImGui::EndCombo();
+            }
 
-        syncMode = window.getSyncMode();
+            SDL_DisplayMode dm;
+            SDL_GetDisplayMode(window.fullscreenDisplay, window.displayMode, &dm);
+            snprintf(itemName, 32, "%dx%d@%d", dm.w, dm.h, dm.refresh_rate);
+            if(ImGui::BeginCombo("Display mode", itemName, 0))
+            {
+                int nbDisplayModes = SDL_GetNumDisplayModes(window.fullscreenDisplay);
+                for(int i = 0; i < nbDisplayModes; i++)
+                {
+                    SDL_GetDisplayMode(window.fullscreenDisplay, i, &dm);
+                    snprintf(itemName, 32, "%dx%d@%d", dm.w, dm.h, dm.refresh_rate);
+                    if(ImGui::Selectable(itemName, i == window.displayMode))
+                    {
+                        window.displayMode = i;
+                        if(window.windowMode == DisplayWindow::WindowMode::fullscreen)
+                            recreateWindow = true;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+
+            if(recreateWindow)
+            {
+                resync = true;
+                window.destroy();
+                renderer.useContext();
+                SDL_Rect rect;
+                SDL_GetDisplayBounds(window.fullscreenDisplay, &rect);
+                switch(window.windowMode)
+                {
+                    case DisplayWindow::windowed:
+                        sizeX = NATIVE_RES_X;
+                        sizeY = NATIVE_RES_Y;
+                    break;
+                    case DisplayWindow::borderless:
+                        posX = 0; posY = 0; sizeX = rect.w; sizeY = rect.h;
+                        computeWindowSize(posX, posY, sizeX, sizeY);
+                    break;
+                    case DisplayWindow::fullscreen:
+                        SDL_DisplayMode dm;
+                        SDL_GetDisplayMode(window.fullscreenDisplay, window.displayMode, &dm);
+                        posX = 0; posY = 0; sizeX = dm.w; sizeY = dm.h;
+                        computeWindowSize(posX, posY, sizeX, sizeY);
+                    break;
+                }
+                window.create();
+                SDL_SetWindowInputFocus(window.sdlWindow);
+                ImGui_ImplOpenGL3_NewFrame();
+                ImGui_ImplSDL2_NewFrame(window.sdlWindow);
+                ImGui::NewFrame();
+                ImGui::Begin("Stuff");
+            }
+
+            if(window.windowMode == DisplayWindow::WindowMode::windowed)
+                    SDL_GetWindowPosition(window.sdlWindow, &posX, &posY);
+            ImGui::DragInt("Position X", &posX, 0.25, -16384, 16384);
+            ImGui::DragInt("Position Y", &posY, 0.25, -16384, 16384);
+            if(window.windowMode == DisplayWindow::WindowMode::windowed)
+            {
+                SDL_SetWindowPosition(window.sdlWindow, posX, posY);
+                SDL_GetWindowSize(window.sdlWindow, &sizeX, &sizeY);
+            }
+            ImGui::DragInt("Size X", &sizeX, 0.25, 1, NATIVE_RES_X * 10);
+            ImGui::DragInt("Size Y", &sizeY, 0.25, 1, NATIVE_RES_Y * 10);
+            if(window.windowMode == DisplayWindow::WindowMode::windowed)
+                    SDL_SetWindowSize(window.sdlWindow, sizeX, sizeY);
+            DisplayWindow::ScalingFilter oldScalingFilter = window.getScalingFilter(),
+                    newScalingFilter = oldScalingFilter;
+
+            enumCombo("Scaling filter", DisplayWindow::scalingFilterNames, reinterpret_cast<int8_t&>(newScalingFilter),
+                DisplayWindow::ScalingFilter::lanczos3);
+            if(oldScalingFilter != newScalingFilter) window.setScalingFilter(newScalingFilter);
+            ImGui::DragInt("Sharpness", &window.sharpness, 0.25, 0, 100);
+
+
+            if(window.tripleBuffer) ImGui::Text("Triple buffer detected. This program may not behave as intended.");
+            DisplayWindow::SyncMode syncMode = window.getSyncMode();
+            if(ImGui::BeginCombo("V-Sync", DisplayWindow::syncModeNames[syncMode], 0))
+            {
+                for(int i = 0; i <= DisplayWindow::SyncMode::vSync; i++)
+                    if(window.isSyncModeAvailable(static_cast<DisplayWindow::SyncMode>(i))
+                        && ImGui::Selectable(DisplayWindow::syncModeNames[i], i == syncMode))
+                {
+                    nextSyncMode = static_cast<DisplayWindow::SyncMode>(i);
+                    window.setSyncMode(DisplayWindow::vSync);
+                    resync = true;
+                }
+                ImGui::EndCombo();
+            }
+            if(enumCombo("Input lag mitigation", inputLagMitigationNames,
+                    reinterpret_cast<int8_t&>(inputLagMitigation),
+                    syncMode == DisplayWindow::SyncMode::noVSync ? InputLagMitigation::gpuSync
+                                                                 : InputLagMitigation::frameDelay))
+                    frameDelayMargin = 0;
+            ImGui::End();
+        }
+
+        DisplayWindow::SyncMode syncMode = window.getSyncMode();
         if(syncMode == DisplayWindow::SyncMode::noVSync && inputLagMitigation == InputLagMitigation::frameDelay)
             inputLagMitigation = InputLagMitigation::gpuSync;
 
         // Update
-        uSeconds = startTime;// getTimeMicroseconds();
+        std::this_thread::yield();
+        uSeconds = startTime;//getTimeMicroseconds();
         int64_t dToUpdate = (uSeconds - prevUseconds) * updateRate;
         toUpdate += dToUpdate;
         prevUseconds = uSeconds;
@@ -469,6 +501,8 @@ int main(int argc, char **argv)
                 dToUpdate = (uSeconds - prevUseconds) * updateRate;
                 toUpdate += dToUpdate;
                 prevUseconds = uSeconds;
+
+                // Should this be before the while loop?
                 if(inputLagMitigation == InputLagMitigation::gpuSync) gpuHardSync();
             }
         }
@@ -476,15 +510,16 @@ int main(int argc, char **argv)
         SDL_DisplayMode displayMode;
         SDL_GetWindowDisplayMode(window.sdlWindow, &displayMode);
         int64_t displayRefreshPeriod = 1000000 / displayMode.refresh_rate;
-        int64_t waitTime = *std::min_element(remainTimes.cbegin(), remainTimes.cend()) - AUTO_FRAME_DELAY_MARGIN;
+        int64_t waitTime = *std::min_element(remainTimes.cbegin(), remainTimes.cend()) -
+                frameDelayMargin / FRAME_DELAY_MARGIN_MULT;
         if(!missedSync && inputLagMitigation == InputLagMitigation::frameDelay && waitTime > 0)
         {
             while(true)
             {
                 int64_t micros = getTimeMicroseconds();
-                if(micros < uSeconds + waitTime)
+                if(micros < startTime + waitTime)
                 {
-                    int64_t sleepTime = uSeconds + waitTime - micros - SLEEP_MARGIN;              
+                    int64_t sleepTime = startTime + waitTime - micros - SLEEP_MARGIN;
                     if(sleepTime > 0) std::this_thread::sleep_for(std::chrono::microseconds(sleepTime));
                 }
                 else break;
@@ -540,7 +575,8 @@ int main(int argc, char **argv)
                 while(toUpdate > 1000000)
                 {
                     int64_t frameTime = getTimeMicroseconds();
-                    currentScene->update((1000000 + addToUpdate) / updateRate, useSavedInputs ? savedInputs : inputs.getState());
+                    currentScene->update((1000000 + addToUpdate) / updateRate, useSavedInputs ? savedInputs :
+                            inputs.getState());
                     useSavedInputs = false;
                     addToUpdate = 0;
                     frameTime = getTimeMicroseconds() - frameTime;
@@ -553,7 +589,8 @@ int main(int argc, char **argv)
                 currentScene->saveState();
                 if(toUpdate > 0 && addToUpdate < 0 && toUpdate + dToUpdate >= 1000000)
                 {
-                    currentScene->update((toUpdate + addToUpdate) / updateRate, useSavedInputs ? savedInputs : inputs.getState());
+                    currentScene->update((toUpdate + addToUpdate) / updateRate, useSavedInputs ? savedInputs :
+                            inputs.getState());
                     useSavedInputs = false;
                     addToUpdate = 1000000 - (toUpdate + addToUpdate);
                     toUpdate -= 1000000;
@@ -566,7 +603,8 @@ int main(int argc, char **argv)
                 while(toUpdate > 1000000)
                 {
                     int64_t frameTime = getTimeMicroseconds();
-                    currentScene->update((1000000 + addToUpdate) / updateRate, useSavedInputs ? savedInputs : inputs.getState());
+                    currentScene->update((1000000 + addToUpdate) / updateRate, useSavedInputs ? savedInputs :
+                            inputs.getState());
                     useSavedInputs = false;
                     addToUpdate = 0;
                     frameTime = getTimeMicroseconds() - frameTime;
@@ -619,7 +657,8 @@ int main(int argc, char **argv)
 
         window.useContext();
         glWaitSync(sync, 0, GL_TIMEOUT_IGNORED);
-        if(testNumber < 0) ImGui::Render();
+        glDeleteSync(sync);
+        if(testNumber < 0 && displayImGui) ImGui::Render();
 
         if(window.windowMode == DisplayWindow::WindowMode::windowed)
         {
@@ -635,7 +674,7 @@ int main(int argc, char **argv)
         }
         window.draw();
 
-        if(testNumber < 0) ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        if(testNumber < 0 && displayImGui) ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         int64_t drawTime = getTimeMicroseconds() - startDrawTime;
         //if(drawTime < simulatedDrawTime * 100) drawTime = simulatedDrawTime * 100;
         drawTimes[currentFrameDraw] = drawTime;
@@ -647,6 +686,7 @@ int main(int argc, char **argv)
         if(resync)
         {
             toUpdate = 0;
+            frameDelayMargin = 0;
             window.setSyncMode(nextSyncMode);
         }
         int64_t afterSwapTime = getTimeMicroseconds();
@@ -654,15 +694,28 @@ int main(int argc, char **argv)
         {
             case DisplayWindow::SyncMode::noVSync:
                 missedSync = false;
+                frameRatio = 0;
                 break;
             case DisplayWindow::SyncMode::adaptiveSync:
             case DisplayWindow::SyncMode::vSync:
                 int64_t remainingTime = displayRefreshPeriod - (beforeSwapTime - startTime) + waitTime;
                 remainTimes[currentFrame] = remainingTime;
-                missedSync = (afterSwapTime - startTime) >= displayRefreshPeriod * 1.1;
+                missedSync = (afterSwapTime - startTime) >= displayRefreshPeriod * 1.01;
+                frameRatio = static_cast<float>(afterSwapTime - startTime) / displayRefreshPeriod;
                 break;
         }
         else missedSync = false;
+        numSyncs++;
+        if(missedSync)
+        {
+            numMissedSyncs++;
+            frameDelayMargin += displayRefreshPeriod;
+        }
+        else
+        {
+            frameDelayMargin -= std::min<int64_t>(100, std::max<int64_t>(-100, afterSwapTime - beforeSwapTime - 100));
+        }
         iterationTimes[currentFrame] = afterSwapTime - updateStartTime;
+        startTime = afterSwapTime;
     }
 }
